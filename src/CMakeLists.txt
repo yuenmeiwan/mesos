@@ -193,6 +193,7 @@ set(AGENT_SRC
   slave/containerizer/provisioner/appc/store.cpp
   slave/containerizer/provisioner/backend.cpp
   slave/containerizer/provisioner/backends/copy.cpp
+  slave/containerizer/provisioner/backends/overlay.cpp
   slave/containerizer/provisioner/docker/registry_client.cpp
   slave/containerizer/provisioner/docker/token_manager.cpp
   slave/resource_estimators/noop.cpp
