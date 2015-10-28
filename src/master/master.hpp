@@ -263,8 +263,8 @@ struct Slave
                    const ExecutorInfo& executorInfo)
   {
     CHECK(!hasExecutor(frameworkId, executorInfo.executor_id()))
-      << "Duplicate executor " << executorInfo.executor_id()
-      << " of framework " << frameworkId;
+      << "Duplicate executor '" << executorInfo.executor_id()
+      << "' of framework " << frameworkId;
 
     executors[frameworkId][executorInfo.executor_id()] = executorInfo;
     usedResources[frameworkId] += executorInfo.resources();
@@ -274,7 +274,7 @@ struct Slave
                       const ExecutorID& executorId)
   {
     CHECK(hasExecutor(frameworkId, executorId))
-      << "Unknown executor " << executorId << " of framework " << frameworkId;
+      << "Unknown executor '" << executorId << "' of framework " << frameworkId;
 
     usedResources[frameworkId] -=
       executors[frameworkId][executorId].resources();
@@ -851,6 +851,10 @@ private:
     process::Future<process::http::Response> scheduler(
         const process::http::Request& request) const;
 
+    // /master/flags
+    process::Future<process::http::Response> flags(
+        const process::http::Request& request) const;
+
     // /master/health
     process::Future<process::http::Response> health(
         const process::http::Request& request) const;
@@ -911,22 +915,23 @@ private:
     process::Future<process::http::Response> unreserve(
         const process::http::Request& request) const;
 
-    const static std::string SCHEDULER_HELP;
-    const static std::string HEALTH_HELP;
-    const static std::string OBSERVE_HELP;
-    const static std::string REDIRECT_HELP;
-    const static std::string ROLES_HELP;
-    const static std::string TEARDOWN_HELP;
-    const static std::string SLAVES_HELP;
-    const static std::string STATE_HELP;
-    const static std::string STATESUMMARY_HELP;
-    const static std::string TASKS_HELP;
-    const static std::string MAINTENANCE_SCHEDULE_HELP;
-    const static std::string MAINTENANCE_STATUS_HELP;
-    const static std::string MACHINE_DOWN_HELP;
-    const static std::string MACHINE_UP_HELP;
-    const static std::string RESERVE_HELP;
-    const static std::string UNRESERVE_HELP;
+    static std::string SCHEDULER_HELP();
+    static std::string FLAGS_HELP();
+    static std::string HEALTH_HELP();
+    static std::string OBSERVE_HELP();
+    static std::string REDIRECT_HELP();
+    static std::string ROLES_HELP();
+    static std::string TEARDOWN_HELP();
+    static std::string SLAVES_HELP();
+    static std::string STATE_HELP();
+    static std::string STATESUMMARY_HELP();
+    static std::string TASKS_HELP();
+    static std::string MAINTENANCE_SCHEDULE_HELP();
+    static std::string MAINTENANCE_STATUS_HELP();
+    static std::string MACHINE_DOWN_HELP();
+    static std::string MACHINE_UP_HELP();
+    static std::string RESERVE_HELP();
+    static std::string UNRESERVE_HELP();
 
   private:
     // Helper for doing authentication, returns the credential used if
@@ -1479,7 +1484,7 @@ struct Framework
   ~Framework()
   {
     if (http.isSome()) {
-      cleanupConnection();
+      closeHttpConnection();
     }
   }
 
@@ -1617,8 +1622,8 @@ struct Framework
                    const ExecutorInfo& executorInfo)
   {
     CHECK(!hasExecutor(slaveId, executorInfo.executor_id()))
-      << "Duplicate executor " << executorInfo.executor_id()
-      << " on slave " << slaveId;
+      << "Duplicate executor '" << executorInfo.executor_id()
+      << "' on slave " << slaveId;
 
     executors[slaveId][executorInfo.executor_id()] = executorInfo;
     totalUsedResources += executorInfo.resources();
@@ -1629,8 +1634,8 @@ struct Framework
                       const ExecutorID& executorId)
   {
     CHECK(hasExecutor(slaveId, executorId))
-      << "Unknown executor " << executorId
-      << " of framework " << id()
+      << "Unknown executor '" << executorId
+      << "' of framework " << id()
       << " of slave " << slaveId;
 
     totalUsedResources -= executors[slaveId][executorId].resources();
@@ -1719,7 +1724,7 @@ struct Framework
     // Cleanup the HTTP connnection if this is a downgrade from HTTP
     // to PID. Note that the connection may already be closed.
     if (http.isSome()) {
-      cleanupConnection();
+      closeHttpConnection();
     }
 
     // TODO(benh): unlink(oldPid);
@@ -1737,7 +1742,7 @@ struct Framework
       // Note that master creates a new HTTP connection for every
       // subscribe request, so 'newHttp' should always be different
       // from 'http'.
-      cleanupConnection();
+      closeHttpConnection();
     }
 
     CHECK_NONE(http);
@@ -1745,10 +1750,11 @@ struct Framework
     http = newHttp;
   }
 
-  // Closes the connection and stops the heartbeat.
+  // Closes the HTTP connection and stops the heartbeat.
+  //
   // TODO(vinod): Currently 'connected' variable is set separately
   // from this method. We need to make sure these are in sync.
-  void cleanupConnection()
+  void closeHttpConnection()
   {
     CHECK_SOME(http);
 

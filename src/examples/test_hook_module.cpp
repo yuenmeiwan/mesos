@@ -134,6 +134,7 @@ public:
     return Nothing();
   }
 
+
   // TODO(nnielsen): Split hook tests into multiple modules to avoid
   // interference.
   virtual Result<Labels> slaveRunTaskLabelDecorator(
@@ -160,6 +161,7 @@ public:
 
     return labels;
   }
+
 
   // In this hook, we create a new environment variable "FOO" and set
   // it's value to "bar".
@@ -264,6 +266,40 @@ public:
     networkInfoLabel->set_value("net_bar");
 
     return result;
+  }
+
+
+  virtual Result<Resources> slaveResourcesDecorator(
+      const SlaveInfo& slaveInfo)
+  {
+    LOG(INFO) << "Executing 'slaveResourcesDecorator' hook";
+
+    Resources resources;
+    // Remove the existing "cpus" resource, it will be overwritten by the
+    // current hook. Keep other resources unchanged.
+    foreach (const Resource& resource, slaveInfo.resources()) {
+      if (resource.name() != "cpus") {
+        resources += resource;
+      }
+    }
+
+    // Force the value of "cpus" to 4 and add a new custom resource named "foo"
+    // of type set.
+    resources += Resources::parse("cpus:4;foo:{bar,baz}").get();
+
+    return resources;
+  }
+
+
+  virtual Result<Attributes> slaveAttributesDecorator(
+      const SlaveInfo& slaveInfo)
+  {
+    LOG(INFO) << "Executing 'slaveAttributesDecorator' hook";
+
+    Attributes attributes = slaveInfo.attributes();
+    attributes.add(Attributes::parse("rack", "rack1"));
+
+    return attributes;
   }
 };
 

@@ -14,8 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set(STOUT_TESTS_TARGET stout_tests)
-
 # STOUT TESTS.
 ##############
 set(STOUT_TESTS_SRC
@@ -29,6 +27,7 @@ set(STOUT_TESTS_SRC
   hashmap_tests.cpp
   hashset_tests.cpp
   interval_tests.cpp
+  ip_tests.cpp
   json_tests.cpp
   linkedhashmap_tests.cpp
   main.cpp
@@ -51,7 +50,6 @@ if (NOT WIN32)
     dynamiclibrary_tests.cpp
     flags_tests.cpp
     gzip_tests.cpp
-    ip_tests.cpp
     mac_tests.cpp
     os_tests.cpp
     path_tests.cpp

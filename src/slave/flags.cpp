@@ -160,9 +160,13 @@ mesos::internal::slave::Flags::Flags()
 
   add(&Flags::switch_user,
       "switch_user",
-      "Whether to run tasks as the user who\n"
-      "submitted them rather than the user running\n"
-      "the slave (requires setuid permission)",
+      "If set to `true`, the agent will attempt to run tasks as\n"
+      "the `user` who submitted them (as defined in `FrameworkInfo`)\n"
+      "(this requires `setuid` permission and that the given `user`\n"
+      "exists on the agent).\n"
+      "If the user does not exist, an error occurs and the task will fail.\n"
+      "If set to `false`, tasks will be run as the same user as the Mesos\n"
+      "agent process.",
       true);
 
   add(&Flags::frameworks_home,
@@ -178,7 +182,7 @@ mesos::internal::slave::Flags::Flags()
       "2nd retry between [0, b * 2^2], 3rd retry between [0, b * 2^3] etc)\n"
       "up to a maximum of " +
         stringify(REGISTER_RETRY_INTERVAL_MAX),
-      REGISTRATION_BACKOFF_FACTOR);
+      DEFAULT_REGISTRATION_BACKOFF_FACTOR);
 
   add(&Flags::executor_environment_variables,
       "executor_environment_variables",
@@ -241,12 +245,6 @@ mesos::internal::slave::Flags::Flags()
       "This drives the garbage collection of archived\n"
       "information and sandboxes.",
       DISK_WATCH_INTERVAL);
-
-  add(&Flags::resource_monitoring_interval,
-      "resource_monitoring_interval",
-      "Periodic time interval for monitoring executor\n"
-      "resource usage (e.g., 10secs, 1min, etc)",
-      RESOURCE_MONITORING_INTERVAL);
 
   add(&Flags::recover,
       "recover",

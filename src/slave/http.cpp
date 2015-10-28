@@ -51,6 +51,7 @@
 #include "mesos/resources.hpp"
 
 #include "slave/slave.hpp"
+#include "slave/validation.hpp"
 
 
 using process::Clock;
@@ -197,7 +198,8 @@ void Slave::Http::log(const Request& request)
 }
 
 
-const string Slave::Http::EXECUTOR_HELP = HELP(
+string Slave::Http::EXECUTOR_HELP() {
+  return HELP(
     TLDR(
         "Endpoint for the Executor HTTP API."),
     DESCRIPTION(
@@ -209,6 +211,7 @@ const string Slave::Http::EXECUTOR_HELP = HELP(
         "incrementally."
         "Returns 202 Accepted for all other Call messages iff the "
         "request is accepted."));
+}
 
 
 Future<Response> Slave::Http::executor(const Request& request) const
@@ -258,14 +261,19 @@ Future<Response> Slave::Http::executor(const Request& request) const
 
   const executor::Call call = devolve(v1Call);
 
-  // TODO(anand): Validate the protobuf (MESOS-2906) before proceeding
-  // further.
+
+  Option<Error> error = validation::executor::call::validate(call);
+
+  if (error.isSome()) {
+    return BadRequest("Failed to validate Executor::Call: " +
+                      error.get().message);
+  }
+
+  ContentType responseContentType;
 
   if (call.type() == executor::Call::SUBSCRIBE) {
     // We default to JSON since an empty 'Accept' header
     // results in all media types considered acceptable.
-    ContentType responseContentType;
-
     if (request.acceptsMediaType(APPLICATION_JSON)) {
       responseContentType = ContentType::JSON;
     } else if (request.acceptsMediaType(APPLICATION_PROTOBUF)) {
@@ -275,17 +283,7 @@ Future<Response> Slave::Http::executor(const Request& request) const
           string("Expecting 'Accept' to allow ") +
           "'" + APPLICATION_PROTOBUF + "' or '" + APPLICATION_JSON + "'");
     }
-
-    Pipe pipe;
-    OK ok;
-    ok.headers["Content-Type"] = stringify(responseContentType);
-
-    ok.type = Response::PIPE;
-    ok.reader = pipe.reader();
-
-    return ok;
   }
-
 
   // We consolidate the framework/executor lookup logic here because
   // it is common for all the call handlers.
@@ -299,16 +297,30 @@ Future<Response> Slave::Http::executor(const Request& request) const
     return BadRequest("Executor cannot be found");
   }
 
-  if (executor->state == Executor::REGISTERING) {
+  if (executor->state == Executor::REGISTERING &&
+      call.type() != executor::Call::SUBSCRIBE) {
     return Forbidden("Executor is not subscribed");
   }
 
   switch (call.type()) {
-    case executor::Call::UPDATE:
-      return Accepted();
+    case executor::Call::SUBSCRIBE: {
+      Pipe pipe;
+      OK ok;
+      ok.headers["Content-Type"] = stringify(responseContentType);
 
-    case executor::Call::MESSAGE:
+      ok.type = Response::PIPE;
+      ok.reader = pipe.reader();
+
+      return ok;
+    }
+
+    case executor::Call::UPDATE: {
       return Accepted();
+    }
+
+    case executor::Call::MESSAGE: {
+      return Accepted();
+    }
 
     default:
       // Should be caught during call validation above.
@@ -319,12 +331,40 @@ Future<Response> Slave::Http::executor(const Request& request) const
 }
 
 
-const string Slave::Http::HEALTH_HELP = HELP(
+string Slave::Http::FLAGS_HELP()
+{
+  return HELP(TLDR("Exposes the agent's flag configuration."));
+}
+
+
+Future<Response> Slave::Http::flags(const Request& request) const
+{
+  JSON::Object object;
+
+  {
+    JSON::Object flags;
+    foreachpair (const string& name, const flags::Flag& flag, slave->flags) {
+      Option<string> value = flag.stringify(slave->flags);
+      if (value.isSome()) {
+        flags.values[name] = value.get();
+      }
+    }
+    object.values["flags"] = std::move(flags);
+  }
+
+  return OK(object, request.url.query.get("jsonp"));
+}
+
+
+string Slave::Http::HEALTH_HELP()
+{
+  return HELP(
     TLDR(
         "Health check of the Slave."),
     DESCRIPTION(
         "Returns 200 OK iff the Slave is healthy.",
         "Delayed responses are also indicative of poor health."));
+}
 
 
 Future<Response> Slave::Http::health(const Request& request) const
@@ -333,12 +373,14 @@ Future<Response> Slave::Http::health(const Request& request) const
 }
 
 
-const string Slave::Http::STATE_HELP = HELP(
+string Slave::Http::STATE_HELP() {
+  return HELP(
     TLDR(
         "Information about state of the Slave."),
     DESCRIPTION(
         "This endpoint shows information about the frameworks, executors",
         "and the slave's master as a JSON object."));
+}
 
 
 Future<Response> Slave::Http::state(const Request& request) const

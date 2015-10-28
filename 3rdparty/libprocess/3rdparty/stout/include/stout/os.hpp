@@ -74,20 +74,22 @@
 #include <stout/unreachable.hpp>
 #include <stout/version.hpp>
 
+#include <stout/os/bootid.hpp>
+#include <stout/os/environment.hpp>
 #include <stout/os/fork.hpp>
 #include <stout/os/killtree.hpp>
 #include <stout/os/ls.hpp>
 #include <stout/os/permissions.hpp>
 #include <stout/os/os.hpp>
 #include <stout/os/read.hpp>
+#include <stout/os/realpath.hpp>
 #include <stout/os/rename.hpp>
+#include <stout/os/rm.hpp>
 #include <stout/os/sendfile.hpp>
 #include <stout/os/shell.hpp>
 #include <stout/os/signals.hpp>
 #include <stout/os/stat.hpp>
-#ifdef __APPLE__
-#include <stout/os/sysctl.hpp>
-#endif // __APPLE__
+#include <stout/os/write.hpp>
 
 
 // For readability, we minimize the number of #ifdef blocks in the code by
@@ -101,24 +103,6 @@
 
 
 namespace os {
-
-inline std::map<std::string, std::string> environment()
-{
-  char** environ = os::environ();
-
-  std::map<std::string, std::string> result;
-
-  for (size_t index = 0; environ[index] != NULL; index++) {
-    std::string entry(environ[index]);
-    size_t position = entry.find_first_of('=');
-    if (position == std::string::npos) {
-      continue; // Skip malformed environment entries.
-    }
-    result[entry.substr(0, position)] = entry.substr(position + 1);
-  }
-
-  return result;
-}
 
 
 // Looks in the environment variables for the specified key and
@@ -182,43 +166,6 @@ inline Try<std::string> mktemp(const std::string& path = "/tmp/XXXXXX")
   std::string result(temp);
   delete[] temp;
   return result;
-}
-
-
-// Write out the string to the file at the current fd position.
-inline Try<Nothing> write(int fd, const std::string& message)
-{
-  size_t offset = 0;
-
-  while (offset < message.length()) {
-    ssize_t length =
-      ::write(fd, message.data() + offset, message.length() - offset);
-
-    if (length < 0) {
-      // TODO(benh): Handle a non-blocking fd? (EAGAIN, EWOULDBLOCK)
-      if (errno == EINTR) {
-        continue;
-      }
-      return ErrnoError();
-    }
-
-    offset += length;
-  }
-
-  return Nothing();
-}
-
-
-inline Result<std::string> realpath(const std::string& path)
-{
-  char temp[PATH_MAX];
-  if (::realpath(path.c_str(), temp) == NULL) {
-    if (errno == ENOENT || errno == ENOTDIR) {
-      return None();
-    }
-    return ErrnoError();
-  }
-  return std::string(temp);
 }
 
 
@@ -303,28 +250,6 @@ inline Try<Nothing> tar(const std::string& path, const std::string& archive)
   }
 
   return Nothing();
-}
-
-
-inline Try<std::string> bootId()
-{
-#ifdef __linux__
-  Try<std::string> read = os::read("/proc/sys/kernel/random/boot_id");
-  if (read.isError()) {
-    return read;
-  }
-  return strings::trim(read.get());
-#elif defined(__APPLE__)
-  // For OS X, we use the boot time in seconds as a unique boot id.
-  // Although imperfect, this works quite well in practice.
-  Try<timeval> bootTime = os::sysctl(CTL_KERN, KERN_BOOTTIME).time();
-  if (bootTime.isError()) {
-    return Error(bootTime.error());
-  }
-  return stringify(bootTime.get().tv_sec);
-#else
-  return Error("Not implemented");
-#endif
 }
 
 

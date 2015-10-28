@@ -21,8 +21,9 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 
-#include <string>
+#include <atomic>
 #include <sstream>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -51,13 +52,36 @@
 #include <stout/lambda.hpp>
 #include <stout/nothing.hpp>
 #include <stout/os.hpp>
-#include <stout/stringify.hpp>
 #include <stout/stopwatch.hpp>
+#include <stout/stringify.hpp>
 #include <stout/try.hpp>
 
 #include "encoder.hpp"
 
-using namespace process;
+namespace http = process::http;
+namespace inject = process::inject;
+
+using process::async;
+using process::Clock;
+using process::defer;
+using process::Deferred;
+using process::Event;
+using process::Executor;
+using process::ExitedEvent;
+using process::Failure;
+using process::Future;
+using process::Message;
+using process::MessageEncoder;
+using process::MessageEvent;
+using process::Owned;
+using process::PID;
+using process::Process;
+using process::ProcessBase;
+using process::Promise;
+using process::run;
+using process::TerminateEvent;
+using process::Time;
+using process::UPID;
 
 using process::firewall::DisabledEndpointsFirewallRule;
 using process::firewall::FirewallRule;
@@ -230,10 +254,10 @@ TEST(ProcessTest, Repair)
 
 
 
-Future<Nothing> after(volatile bool* executed, const Future<Nothing>& future)
+Future<Nothing> after(std::atomic_bool* executed, const Future<Nothing>& future)
 {
   EXPECT_TRUE(future.hasDiscard());
-  *executed = true;
+  executed->store(true);
   return Failure("Failure");
 }
 
@@ -244,7 +268,7 @@ TEST(ProcessTest, After1)
 {
   Clock::pause();
 
-  volatile bool executed = false;
+  std::atomic_bool executed(false);
 
   Future<Nothing> future = Future<Nothing>()
     .after(Hours(42), lambda::bind(&after, &executed, lambda::_1));
@@ -268,7 +292,7 @@ TEST(ProcessTest, After1)
 
   AWAIT_FAILED(future);
 
-  EXPECT_TRUE(executed);
+  EXPECT_TRUE(executed.load());
 
   Clock::resume();
 }
@@ -280,7 +304,7 @@ TEST(ProcessTest, After2)
 {
   Clock::pause();
 
-  volatile bool executed = false;
+  std::atomic_bool executed(false);
 
   Promise<Nothing> promise;
 
@@ -309,7 +333,7 @@ TEST(ProcessTest, After2)
   // callback to execute.
   Clock::advance(Hours(21));
 
-  EXPECT_FALSE(executed);
+  EXPECT_FALSE(executed.load());
 
   Clock::resume();
 }
@@ -384,9 +408,9 @@ Future<bool> inner1(const Future<bool>& future)
 }
 
 
-Future<int> inner2(volatile bool* executed, const Future<int>& future)
+Future<int> inner2(std::atomic_bool* executed, const Future<int>& future)
 {
-  *executed = true;
+  executed->store(true);
   return future;
 }
 
@@ -398,7 +422,7 @@ TEST(ProcessTest, Discard1)
   Promise<bool> promise1;
   Promise<int> promise2;
 
-  volatile bool executed = false;
+  std::atomic_bool executed(false);
 
   Future<int> future = Future<string>("hello world")
     .then(lambda::bind(&inner1, promise1.future()))
@@ -427,7 +451,7 @@ TEST(ProcessTest, Discard1)
   AWAIT_DISCARDED(future);
 
   // And the final lambda should never have executed.
-  ASSERT_FALSE(executed);
+  ASSERT_FALSE(executed.load());
   ASSERT_TRUE(promise2.future().isPending());
 }
 
@@ -439,7 +463,7 @@ TEST(ProcessTest, Discard2)
   Promise<bool> promise1;
   Promise<int> promise2;
 
-  volatile bool executed = false;
+  std::atomic_bool executed(false);
 
   Future<int> future = Future<string>("hello world")
     .then(lambda::bind(&inner1, promise1.future()))
@@ -470,7 +494,7 @@ TEST(ProcessTest, Discard2)
   AWAIT_DISCARDED(future);
 
   // And the final lambda should never have executed.
-  ASSERT_FALSE(executed);
+  ASSERT_FALSE(executed.load());
   ASSERT_TRUE(promise2.future().isPending());
 }
 
@@ -482,7 +506,7 @@ TEST(ProcessTest, Discard3)
   Promise<bool> promise1;
   Promise<int> promise2;
 
-  volatile bool executed = false;
+  std::atomic_bool executed(false);
 
   Future<int> future = Future<string>("hello world")
     .then(lambda::bind(&inner1, promise1.future()))
@@ -511,7 +535,7 @@ TEST(ProcessTest, Discard3)
   AWAIT_FAILED(future);
 
   // And the final lambda should never have executed.
-  ASSERT_FALSE(executed);
+  ASSERT_FALSE(executed.load());
   ASSERT_TRUE(promise2.future().isPending());
 }
 
@@ -730,21 +754,21 @@ TEST(ProcessTest, Defer3)
 {
   ASSERT_TRUE(GTEST_IS_THREADSAFE);
 
-  volatile bool bool1 = false;
-  volatile bool bool2 = false;
+  std::atomic_bool bool1(false);
+  std::atomic_bool bool2(false);
 
   Deferred<void(bool)> set1 =
-    defer([&bool1](bool b) { bool1 = b; });
+    defer([&bool1](bool b) { bool1.store(b); });
 
   set1(true);
 
   Deferred<void(bool)> set2 =
-    defer([&bool2](bool b) { bool2 = b; });
+    defer([&bool2](bool b) { bool2.store(b); });
 
   set2(true);
 
-  while (!bool1);
-  while (!bool2);
+  while (bool1.load() == false);
+  while (bool2.load() == false);
 }
 
 
@@ -972,7 +996,7 @@ TEST(ProcessTest, Delay)
 
   Clock::pause();
 
-  volatile bool timeoutCalled = false;
+  std::atomic_bool timeoutCalled(false);
 
   TimeoutProcess process;
 
@@ -985,7 +1009,7 @@ TEST(ProcessTest, Delay)
 
   Clock::advance(Seconds(5));
 
-  while (!timeoutCalled);
+  while (timeoutCalled.load() == false);
 
   terminate(process);
   wait(process);
@@ -1013,7 +1037,7 @@ TEST(ProcessTest, Order)
 
   TimeoutProcess process1;
 
-  volatile bool timeoutCalled = false;
+  std::atomic_bool timeoutCalled(false);
 
   EXPECT_CALL(process1, timeout())
     .WillOnce(Assign(&timeoutCalled, true));
@@ -1033,7 +1057,7 @@ TEST(ProcessTest, Order)
 
   dispatch(process2, &OrderProcess::order, process1.self());
 
-  while (!timeoutCalled);
+  while (timeoutCalled.load() == false);
 
   EXPECT_EQ(now + seconds, Clock::now(&process1));
 
@@ -1091,7 +1115,7 @@ TEST(ProcessTest, Exited)
 
   ExitedProcess process(pid);
 
-  volatile bool exitedCalled = false;
+  std::atomic_bool exitedCalled(false);
 
   EXPECT_CALL(process, exited(pid))
     .WillOnce(Assign(&exitedCalled, true));
@@ -1100,7 +1124,7 @@ TEST(ProcessTest, Exited)
 
   terminate(pid);
 
-  while (!exitedCalled);
+  while (exitedCalled.load() == false);
 
   terminate(process);
   wait(process);
@@ -1115,7 +1139,7 @@ TEST(ProcessTest, InjectExited)
 
   ExitedProcess process(pid);
 
-  volatile bool exitedCalled = false;
+  std::atomic_bool exitedCalled(false);
 
   EXPECT_CALL(process, exited(pid))
     .WillOnce(Assign(&exitedCalled, true));
@@ -1124,7 +1148,7 @@ TEST(ProcessTest, InjectExited)
 
   inject::exited(pid, process.self());
 
-  while (!exitedCalled);
+  while (exitedCalled.load() == false);
 
   terminate(process);
   wait(process);
@@ -1188,10 +1212,10 @@ public:
   void afterDispatch()
   {
     os::sleep(Milliseconds(10));
-    calledDispatch = true;
+    calledDispatch.store(true);
   }
 
-  volatile bool calledDispatch;
+  std::atomic_bool calledDispatch;
 };
 
 
@@ -1203,7 +1227,7 @@ TEST(ProcessTest, Settle)
   SettleProcess process;
   spawn(process);
   Clock::settle();
-  ASSERT_TRUE(process.calledDispatch);
+  ASSERT_TRUE(process.calledDispatch.load());
   terminate(process);
   wait(process);
   Clock::resume();
@@ -1279,8 +1303,8 @@ TEST(ProcessTest, Executor)
 {
   ASSERT_TRUE(GTEST_IS_THREADSAFE);
 
-  volatile bool event1Called = false;
-  volatile bool event2Called = false;
+  std::atomic_bool event1Called(false);
+  std::atomic_bool event2Called(false);
 
   EventReceiver receiver;
 
@@ -1306,8 +1330,8 @@ TEST(ProcessTest, Executor)
 
   event2("event2");
 
-  while (!event1Called);
-  while (!event2Called);
+  while (event1Called.load() == false);
+  while (event2Called.load() == false);
 }
 
 

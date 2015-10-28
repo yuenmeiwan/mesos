@@ -37,11 +37,12 @@
 
 #include <process/ssl/gtest.hpp>
 
-#include "slave/containerizer/provisioner/docker/metadata_manager.hpp"
-#include "slave/containerizer/provisioner/docker/paths.hpp"
-#include "slave/containerizer/provisioner/docker/registry_client.hpp"
-#include "slave/containerizer/provisioner/docker/store.hpp"
-#include "slave/containerizer/provisioner/docker/token_manager.hpp"
+#include "slave/containerizer/mesos/provisioner/docker/metadata_manager.hpp"
+#include "slave/containerizer/mesos/provisioner/docker/paths.hpp"
+#include "slave/containerizer/mesos/provisioner/docker/registry_client.hpp"
+#include "slave/containerizer/mesos/provisioner/docker/spec.hpp"
+#include "slave/containerizer/mesos/provisioner/docker/store.hpp"
+#include "slave/containerizer/mesos/provisioner/docker/token_manager.hpp"
 
 #include "tests/mesos.hpp"
 #include "tests/utils.hpp"
@@ -68,6 +69,65 @@ using ManifestResponse = RegistryClient::ManifestResponse;
 namespace mesos {
 namespace internal {
 namespace tests {
+
+
+TEST(DockerUtilsTest, ParseImageName)
+{
+  slave::docker::Image::Name name;
+
+  name = parseImageName("library/busybox");
+  EXPECT_FALSE(name.has_registry());
+  EXPECT_EQ("library/busybox", name.repository());
+  EXPECT_EQ("latest", name.tag());
+
+  name = parseImageName("busybox");
+  EXPECT_FALSE(name.has_registry());
+  EXPECT_EQ("busybox", name.repository());
+  EXPECT_EQ("latest", name.tag());
+
+  name = parseImageName("library/busybox:tag");
+  EXPECT_FALSE(name.has_registry());
+  EXPECT_EQ("library/busybox", name.repository());
+  EXPECT_EQ("tag", name.tag());
+
+  // Note that the digest is stored as a tag.
+  name = parseImageName(
+      "library/busybox"
+      "@sha256:bc8813ea7b3603864987522f02a7"
+      "6101c17ad122e1c46d790efc0fca78ca7bfb");
+  EXPECT_FALSE(name.has_registry());
+  EXPECT_EQ("library/busybox", name.repository());
+  EXPECT_EQ("sha256:bc8813ea7b3603864987522f02a7"
+            "6101c17ad122e1c46d790efc0fca78ca7bfb",
+            name.tag());
+
+  name = parseImageName("registry.io/library/busybox");
+  EXPECT_EQ("registry.io", name.registry());
+  EXPECT_EQ("library/busybox", name.repository());
+  EXPECT_EQ("latest", name.tag());
+
+  name = parseImageName("registry.io/library/busybox:tag");
+  EXPECT_EQ("registry.io", name.registry());
+  EXPECT_EQ("library/busybox", name.repository());
+  EXPECT_EQ("tag", name.tag());
+
+  name = parseImageName("registry.io:80/library/busybox:tag");
+  EXPECT_EQ("registry.io:80", name.registry());
+  EXPECT_EQ("library/busybox", name.repository());
+  EXPECT_EQ("tag", name.tag());
+
+  // Note that the digest is stored as a tag.
+  name = parseImageName(
+      "registry.io:80/library/busybox"
+      "@sha256:bc8813ea7b3603864987522f02a7"
+      "6101c17ad122e1c46d790efc0fca78ca7bfb");
+  EXPECT_EQ("registry.io:80", name.registry());
+  EXPECT_EQ("library/busybox", name.repository());
+  EXPECT_EQ("sha256:bc8813ea7b3603864987522f02a7"
+            "6101c17ad122e1c46d790efc0fca78ca7bfb",
+            name.tag());
+}
+
 
 /**
  * Provides token operations and defaults.
@@ -233,6 +293,215 @@ TEST_F(RegistryTokenTest, NotBeforeInFuture)
 
   ASSERT_SOME(token);
   ASSERT_EQ(token.get().isValid(), false);
+}
+
+
+class DockerSpecTest : public ::testing::Test {};
+
+TEST_F(DockerSpecTest, SerializeDockerManifest)
+{
+  JSON::Value manifest = JSON::parse(
+    "{"
+    "   \"name\": \"dmcgowan/test-image\","
+    "   \"tag\": \"latest\","
+    "   \"architecture\": \"amd64\","
+    "   \"fsLayers\": ["
+    "      {"
+    "         \"blobSum\": "
+  "\"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\""
+    "      },"
+    "      {"
+    "         \"blobSum\": "
+  "\"sha256:cea0d2071b01b0a79aa4a05ea56ab6fdf3fafa03369d9f4eea8d46ea33c43e5f\""
+    "      },"
+    "      {"
+    "         \"blobSum\": "
+  "\"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\""
+    "      },"
+    "      {"
+    "         \"blobSum\": "
+  "\"sha256:2a7812e636235448785062100bb9103096aa6655a8f6bb9ac9b13fe8290f66df\""
+    "      }"
+    "   ],"
+    "   \"history\": ["
+    "      {"
+    "         \"v1Compatibility\": "
+    "           {"
+    "             \"id\": "
+    "\"2ce2e90b0bc7224de3db1f0d646fe8e2c4dd37f1793928287f6074bc451a57ea\","
+    "             \"parent\": "
+    "\"cf2616975b4a3cba083ca99bc3f0bf25f5f528c3c52be1596b30f60b0b1c37ff\""
+    "           }"
+    "      },"
+    "      {"
+    "         \"v1Compatibility\": "
+    "           {"
+    "             \"id\": "
+    "\"2ce2e90b0bc7224de3db1f0d646fe8e2c4dd37f1793928287f6074bc451a57ea\","
+    "             \"parent\": "
+    "\"cf2616975b4a3cba083ca99bc3f0bf25f5f528c3c52be1596b30f60b0b1c37ff\""
+    "           }"
+    "      },"
+    "      {"
+    "         \"v1Compatibility\": "
+    "           {"
+    "             \"id\": "
+    "\"2ce2e90b0bc7224de3db1f0d646fe8e2c4dd37f1793928287f6074bc451a57ea\","
+    "             \"parent\": "
+    "\"cf2616975b4a3cba083ca99bc3f0bf25f5f528c3c52be1596b30f60b0b1c37ff\""
+    "           }"
+    "      },"
+    "      {"
+    "         \"v1Compatibility\": "
+    "           {"
+    "             \"id\": "
+    "\"2ce2e90b0bc7224de3db1f0d646fe8e2c4dd37f1793928287f6074bc451a57ea\","
+    "             \"parent\": "
+    "\"cf2616975b4a3cba083ca99bc3f0bf25f5f528c3c52be1596b30f60b0b1c37ff\""
+    "           }"
+    "      }"
+    "   ],"
+    "   \"schemaVersion\": 1,"
+    "   \"signatures\": ["
+    "      {"
+    "         \"header\": {"
+    "            \"jwk\": {"
+    "               \"crv\": \"P-256\","
+    "               \"kid\": "
+    "\"LYRA:YAG2:QQKS:376F:QQXY:3UNK:SXH7:K6ES:Y5AU:XUN5:ZLVY:KBYL\","
+    "               \"kty\": \"EC\","
+    "               \"x\": \"Cu_UyxwLgHzE9rvlYSmvVdqYCXY42E9eNhBb0xNv0SQ\","
+    "               \"y\": \"zUsjWJkeKQ5tv7S-hl1Tg71cd-CqnrtiiLxSi6N_yc8\""
+    "            },"
+    "            \"alg\": \"ES256\""
+    "         },"
+    "         \"signature\": \"m3bgdBXZYRQ4ssAbrgj8Kjl7GNgrKQvmCSY-00yzQosKi-8"
+    "UBrIRrn3Iu5alj82B6u_jNrkGCjEx3TxrfT1rig\","
+    "         \"protected\": \"eyJmb3JtYXRMZW5ndGgiOjYwNjMsImZvcm1hdFRhaWwiOiJ"
+    "DbjAiLCJ0aW1lIjoiMjAxNC0wOS0xMVQxNzoxNDozMFoifQ\""
+    "      }"
+    "   ]"
+    "}").get();
+
+  Try<JSON::Object> json = JSON::parse<JSON::Object>(stringify(manifest));
+  ASSERT_SOME(json);
+
+  Try<slave::docker::DockerImageManifest> dockerImageManifest =
+    spec::parse(json.get());
+
+  ASSERT_SOME(dockerImageManifest);
+
+  EXPECT_EQ(dockerImageManifest.get().name(), "dmcgowan/test-image");
+  EXPECT_EQ(dockerImageManifest.get().tag(), "latest");
+  EXPECT_EQ(dockerImageManifest.get().architecture(), "amd64");
+
+  EXPECT_EQ(dockerImageManifest.get().fslayers(0).blobsum(),
+    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+  EXPECT_EQ(dockerImageManifest.get().fslayers(1).blobsum(),
+    "sha256:cea0d2071b01b0a79aa4a05ea56ab6fdf3fafa03369d9f4eea8d46ea33c43e5f");
+  EXPECT_EQ(dockerImageManifest.get().fslayers(2).blobsum(),
+    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+  EXPECT_EQ(dockerImageManifest.get().fslayers(3).blobsum(),
+    "sha256:2a7812e636235448785062100bb9103096aa6655a8f6bb9ac9b13fe8290f66df");
+
+  EXPECT_EQ(dockerImageManifest.get().history(1).v1compatibility().id(),
+    "2ce2e90b0bc7224de3db1f0d646fe8e2c4dd37f1793928287f6074bc451a57ea");
+  EXPECT_EQ(dockerImageManifest.get().history(2).v1compatibility().parent(),
+    "cf2616975b4a3cba083ca99bc3f0bf25f5f528c3c52be1596b30f60b0b1c37ff");
+
+  EXPECT_EQ(dockerImageManifest.get().schemaversion(), 1u);
+
+  EXPECT_EQ(dockerImageManifest.get().signatures(0).header().jwk().kid(),
+    "LYRA:YAG2:QQKS:376F:QQXY:3UNK:SXH7:K6ES:Y5AU:XUN5:ZLVY:KBYL");
+  EXPECT_EQ(dockerImageManifest.get().signatures(0).signature(),
+    "m3bgdBXZYRQ4ssAbrgj8Kjl7GNgrKQvmCSY-00yzQosKi-8"
+    "UBrIRrn3Iu5alj82B6u_jNrkGCjEx3TxrfT1rig");
+}
+
+// Test invalid JSON object, expecting an error.
+TEST_F(DockerSpecTest, SerializeDockerInvalidManifest)
+{
+  // This is an invalid manifest. The repeated fields 'history' and 'fsLayers'
+  // must be >= 1. The 'signatures' and 'schemaVersion' are not set.
+  JSON::Value manifest = JSON::parse(
+    "{"
+    "   \"name\": \"dmcgowan/test-image\","
+    "   \"tag\": \"latest\","
+    "   \"architecture\": \"amd64\""
+    "}").get();
+
+  Try<JSON::Object> json = JSON::parse<JSON::Object>(stringify(manifest));
+  ASSERT_SOME(json);
+
+  Try<slave::docker::DockerImageManifest> dockerImageManifest =
+    spec::parse(json.get());
+
+  EXPECT_ERROR(dockerImageManifest);
+}
+
+// Test Manifest Validation with empty repeated 'fsLayers' field.
+TEST_F(DockerSpecTest, ValidationDockerManifestFsLayersNonEmpty)
+{
+  JSON::Value manifest = JSON::parse(
+    "{"
+    "   \"name\": \"dmcgowan/test-image\","
+    "   \"tag\": \"latest\","
+    "   \"architecture\": \"amd64\","
+    "   \"schemaVersion\": 1,"
+    "   \"signatures\": ["
+    "      {"
+    "         \"header\": {"
+    "            \"jwk\": {"
+    "               \"crv\": \"P-256\","
+    "               \"kid\": "
+    "\"LYRA:YAG2:QQKS:376F:QQXY:3UNK:SXH7:K6ES:Y5AU:XUN5:ZLVY:KBYL\","
+    "               \"kty\": \"EC\","
+    "               \"x\": \"Cu_UyxwLgHzE9rvlYSmvVdqYCXY42E9eNhBb0xNv0SQ\","
+    "               \"y\": \"zUsjWJkeKQ5tv7S-hl1Tg71cd-CqnrtiiLxSi6N_yc8\""
+    "            },"
+    "            \"alg\": \"ES256\""
+    "         },"
+    "         \"signature\": \"m3bgdBXZYRQ4ssAbrgj8Kjl7GNgrKQvmCSY-00yzQosKi-8"
+    "UBrIRrn3Iu5alj82B6u_jNrkGCjEx3TxrfT1rig\","
+    "         \"protected\": \"eyJmb3JtYXRMZW5ndGgiOjYwNjMsImZvcm1hdFRhaWwiOiJ"
+    "DbjAiLCJ0aW1lIjoiMjAxNC0wOS0xMVQxNzoxNDozMFoifQ\""
+    "      }"
+    "   ]"
+    "}").get();
+
+  Try<JSON::Object> json = JSON::parse<JSON::Object>(stringify(manifest));
+  ASSERT_SOME(json);
+
+  Try<slave::docker::DockerImageManifest> dockerImageManifest =
+    spec::parse(json.get());
+
+  EXPECT_ERROR(dockerImageManifest);
+}
+
+// Test Manifest Validation with empty repeated 'signatures' field.
+TEST_F(DockerSpecTest, ValidationDockerManifestSignaturesNonEmpty)
+{
+  JSON::Value manifest = JSON::parse(
+    "{"
+    "   \"name\": \"dmcgowan/test-image\","
+    "   \"tag\": \"latest\","
+    "   \"architecture\": \"amd64\","
+    "   \"fsLayers\": ["
+    "      {"
+    "         \"blobSum\": "
+  "\"sha256:2a7812e636235448785062100bb9103096aa6655a8f6bb9ac9b13fe8290f66df\""
+    "      }"
+    "   ],"
+    "   \"schemaVersion\": 1"
+    "}").get();
+
+  Try<JSON::Object> json = JSON::parse<JSON::Object>(stringify(manifest));
+  ASSERT_SOME(json);
+
+  Try<slave::docker::DockerImageManifest> dockerImageManifest =
+    spec::parse(json.get());
+
+  EXPECT_ERROR(dockerImageManifest);
 }
 
 
@@ -490,6 +759,32 @@ TEST_F(RegistryClientTest, SimpleGetManifest)
   \"sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4\"  \
         } \
       ],  \
+    \"history\": [  \
+      { \
+        \"v1Compatibility\": \
+          \"{\\\"id\\\": \
+    \\\"1ce2e90b0bc7224de3db1f0d646fe8e2c4dd37f1793928287f6074bc451a57ea\\\", \
+            \\\"parent\\\": \
+    \\\"cf2616975b4a3cba083ca99bc3f0bf25f5f528c3c52be1596b30f60b0b1c37ff\\\" \
+            }\" \
+      }, \
+      { \
+        \"v1Compatibility\": \
+          \"{\\\"id\\\": \
+    \\\"2ce2e90b0bc7224de3db1f0d646fe8e2c4dd37f1793928287f6074bc451a57ea\\\", \
+            \\\"parent\\\": \
+    \\\"cf2616975b4a3cba083ca99bc3f0bf25f5f528c3c52be1596b30f60b0b1c37ff\\\" \
+            }\" \
+      }, \
+      { \
+        \"v1Compatibility\": \
+          \"{\\\"id\\\": \
+    \\\"3ce2e90b0bc7224de3db1f0d646fe8e2c4dd37f1793928287f6074bc451a57ea\\\", \
+            \\\"parent\\\": \
+    \\\"cf2616975b4a3cba083ca99bc3f0bf25f5f528c3c52be1596b30f60b0b1c37ff\\\" \
+            }\" \
+      } \
+    ], \
        \"signatures\": [  \
           { \
              \"header\": {  \
@@ -526,6 +821,18 @@ TEST_F(RegistryClientTest, SimpleGetManifest)
   AWAIT_ASSERT_READY(Socket(socket.get()).send(manifestHttpResponse));
 
   AWAIT_ASSERT_READY(manifestResponseFuture);
+
+  ASSERT_EQ(
+      manifestResponseFuture.get().fsLayerInfoList[0].layerId,
+      "1ce2e90b0bc7224de3db1f0d646fe8e2c4dd37f1793928287f6074bc451a57ea");
+
+  ASSERT_EQ(
+      manifestResponseFuture.get().fsLayerInfoList[1].layerId,
+      "2ce2e90b0bc7224de3db1f0d646fe8e2c4dd37f1793928287f6074bc451a57ea");
+
+  ASSERT_EQ(
+      manifestResponseFuture.get().fsLayerInfoList[2].layerId,
+      "3ce2e90b0bc7224de3db1f0d646fe8e2c4dd37f1793928287f6074bc451a57ea");
 }
 
 
@@ -706,11 +1013,15 @@ public:
       const slave::Flags& flags,
       const vector<string>& layers)
   {
-    string layersPath = path::join(flags.docker_store_dir, "layers");
+    const string layersPath = path::join(flags.docker_store_dir, "layers");
 
     // Verify contents of the image in store directory.
-    string layerPath1 = getImageLayerRootfsPath(flags.docker_store_dir, "123");
-    string layerPath2 = getImageLayerRootfsPath(flags.docker_store_dir, "456");
+    const string layerPath1 =
+      getImageLayerRootfsPath(flags.docker_store_dir, "123");
+
+    const string layerPath2 =
+      getImageLayerRootfsPath(flags.docker_store_dir, "456");
+
     EXPECT_TRUE(os::exists(layerPath1));
     EXPECT_TRUE(os::exists(layerPath2));
     EXPECT_SOME_EQ(
@@ -732,8 +1043,8 @@ protected:
   {
     TemporaryDirectoryTest::SetUp();
 
-    string imageDir = path::join(os::getcwd(), "images");
-    string image = path::join(imageDir, "abc:latest");
+    const string imageDir = path::join(os::getcwd(), "images");
+    const string image = path::join(imageDir, "abc:latest");
     ASSERT_SOME(os::mkdir(imageDir));
     ASSERT_SOME(os::mkdir(image));
 
@@ -793,8 +1104,8 @@ protected:
 // stored in the proper locations accessible to the Docker provisioner.
 TEST_F(ProvisionerDockerLocalStoreTest, LocalStoreTestWithTar)
 {
-  string imageDir = path::join(os::getcwd(), "images");
-  string image = path::join(imageDir, "abc:latest");
+  const string imageDir = path::join(os::getcwd(), "images");
+  const string image = path::join(imageDir, "abc:latest");
   ASSERT_SOME(os::mkdir(imageDir));
   ASSERT_SOME(os::mkdir(image));
 
@@ -805,9 +1116,6 @@ TEST_F(ProvisionerDockerLocalStoreTest, LocalStoreTestWithTar)
 
   Try<Owned<slave::Store>> store = slave::docker::Store::create(flags);
   ASSERT_SOME(store);
-
-  string sandbox = path::join(os::getcwd(), "sandbox");
-  ASSERT_SOME(os::mkdir(sandbox));
 
   Image mesosImage;
   mesosImage.set_type(Image::DOCKER);
@@ -831,9 +1139,6 @@ TEST_F(ProvisionerDockerLocalStoreTest, MetadataManagerInitialization)
 
   Try<Owned<slave::Store>> store = slave::docker::Store::create(flags);
   ASSERT_SOME(store);
-
-  string sandbox = path::join(os::getcwd(), "sandbox");
-  ASSERT_SOME(os::mkdir(sandbox));
 
   Image image;
   image.set_type(Image::DOCKER);

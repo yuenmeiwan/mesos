@@ -41,7 +41,6 @@ nobase_include_HEADERS =		\
   stout/lambda.hpp			\
   stout/linkedhashmap.hpp		\
   stout/posix/gzip.hpp			\
-  stout/posix/net.hpp			\
   stout/posix/os.hpp			\
   stout/list.hpp			\
   stout/mac.hpp				\
@@ -53,21 +52,24 @@ nobase_include_HEADERS =		\
   stout/numify.hpp			\
   stout/option.hpp			\
   stout/os.hpp				\
+  stout/os/bootid.hpp			\
   stout/os/close.hpp			\
+  stout/os/environment.hpp		\
   stout/os/exists.hpp			\
   stout/os/fcntl.hpp			\
   stout/os/fork.hpp			\
+  stout/os/ftruncate.hpp		\
   stout/os/killtree.hpp			\
   stout/os/linux.hpp			\
+  stout/os/posix/bootid.hpp		\
   stout/os/posix/exists.hpp		\
   stout/os/posix/fcntl.hpp		\
   stout/os/posix/fork.hpp		\
+  stout/os/posix/ftruncate.hpp		\
   stout/os/posix/killtree.hpp		\
   stout/os/posix/ls.hpp			\
-  stout/os/posix/open.hpp		\
   stout/os/posix/process.hpp		\
   stout/os/posix/pstree.hpp		\
-  stout/os/posix/read.hpp		\
   stout/os/posix/sendfile.hpp		\
   stout/os/posix/shell.hpp		\
   stout/os/posix/signals.hpp		\
@@ -78,7 +80,9 @@ nobase_include_HEADERS =		\
   stout/os/osx.hpp			\
   stout/os/process.hpp			\
   stout/os/read.hpp			\
+  stout/os/realpath.hpp			\
   stout/os/rename.hpp			\
+  stout/os/rm.hpp			\
   stout/os/sendfile.hpp			\
   stout/os/shell.hpp			\
   stout/os/signals.hpp			\
@@ -86,15 +90,17 @@ nobase_include_HEADERS =		\
   stout/os/permissions.hpp		\
   stout/os/pstree.hpp			\
   stout/os/sysctl.hpp			\
+  stout/os/write.hpp			\
+  stout/os/raw/environment.hpp		\
+  stout/os/windows/bootid.hpp		\
   stout/os/windows/exists.hpp		\
   stout/os/windows/fcntl.hpp		\
   stout/os/windows/fork.hpp		\
+  stout/os/windows/ftruncate.hpp	\
   stout/os/windows/killtree.hpp		\
   stout/os/windows/ls.hpp		\
-  stout/os/windows/open.hpp		\
   stout/os/windows/process.hpp		\
   stout/os/windows/pstree.hpp		\
-  stout/os/windows/read.hpp		\
   stout/os/windows/sendfile.hpp		\
   stout/os/windows/shell.hpp		\
   stout/os/windows/signals.hpp		\
@@ -124,5 +130,4 @@ nobase_include_HEADERS =		\
   stout/windows.hpp			\
   stout/windows/format.hpp		\
   stout/windows/gzip.hpp		\
-  stout/windows/net.hpp			\
   stout/windows/os.hpp

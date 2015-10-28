@@ -33,22 +33,10 @@
 #include <stout/try.hpp>
 #include <stout/windows.hpp>
 
+#include <stout/os/raw/environment.hpp>
+
 
 namespace os {
-
-inline char** environ()
-{
-  // Defined in stdlib.h.
-  return ::_environ;
-}
-
-
-// Returns the address of os::environ().
-inline char*** environp()
-{
-  return &::_environ;
-}
-
 
 // Sets the value associated with the specified key in the set of
 // environment variables.
@@ -69,20 +57,6 @@ inline void unsetenv(const std::string& key)
 
 
 inline Try<Nothing> touch(const std::string& path)
-{
-  UNIMPLEMENTED;
-}
-
-
-// A wrapper function that wraps the above write() with
-// open and closing the file.
-inline Try<Nothing> write(const std::string& path, const std::string& message)
-{
-  UNIMPLEMENTED;
-}
-
-
-inline Try<Nothing> rm(const std::string& path)
 {
   UNIMPLEMENTED;
 }

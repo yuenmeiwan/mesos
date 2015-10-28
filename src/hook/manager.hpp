@@ -74,6 +74,12 @@ public:
   static TaskStatus slaveTaskStatusDecorator(
       const FrameworkID& frameworkId,
       TaskStatus status);
+
+  static Resources slaveResourcesDecorator(
+      const SlaveInfo& slaveInfo);
+
+  static Attributes slaveAttributesDecorator(
+      const SlaveInfo& slaveInfo);
 };
 
 } // namespace internal {

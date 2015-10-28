@@ -40,7 +40,7 @@
 
 #include "slave/containerizer/linux_launcher.hpp"
 
-#include "slave/containerizer/isolators/namespaces/pid.hpp"
+#include "slave/containerizer/mesos/isolators/namespaces/pid.hpp"
 
 using namespace process;
 
@@ -175,6 +175,19 @@ Try<Launcher*> LinuxLauncher::create(const Flags& flags)
       systemd::exists() ?
         Some(systemd::hierarchy()) :
         Option<std::string>::none());
+}
+
+
+bool LinuxLauncher::available()
+{
+  // Make sure:
+  //   - we run as root
+  //   - cgroups are enabled
+  //   - "freezer" subsytem is available.
+
+  return ::geteuid() == 0 &&
+         cgroups::enabled() &&
+         cgroups::hierarchy("freezer").isSome();
 }
 
 

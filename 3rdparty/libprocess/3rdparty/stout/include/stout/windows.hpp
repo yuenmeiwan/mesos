@@ -15,8 +15,14 @@
 #define __STOUT_WINDOWS_HPP__
 
 
+#include <direct.h> // For `_mkdir`.
 #include <fcntl.h>  // For file access flags like `_O_CREAT`.
+#include <io.h>     // For `_read`, `_write`.
 
+#include <BaseTsd.h> // For `SSIZE_T`.
+// We include `Winsock2.h` before `Windows.h` explicitly to avoid symbold
+// re-definitions. This is a known pattern in the windows community.
+#include <Winsock2.h>
 #include <Windows.h>
 
 
@@ -51,6 +57,7 @@
 #define O_CREAT _O_CREAT
 #define O_TRUNC _O_TRUNC
 #define O_APPEND _O_APPEND
+#define O_CLOEXEC _O_NOINHERIT
 
 // TODO(hausdorff): (MESOS-3398) Not defined on Windows. This value is
 // temporary.
@@ -67,6 +74,13 @@ typedef int mode_t;
 // `DWORD` is expected to be the type holding PIDs throughout the Windows API,
 // including functions like `OpenProcess`.
 typedef DWORD pid_t;
+
+typedef SSIZE_T ssize_t;
+
+// Socket flags. Define behavior of a socket when it (e.g.) shuts down. We map
+// the Windows versions of these flags to their POSIX equivalents so we don't
+// have to change any socket code.
+constexpr int SHUT_RD = SD_RECEIVE;
 
 // File I/O function aliases.
 //

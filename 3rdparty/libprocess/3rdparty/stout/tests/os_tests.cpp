@@ -80,7 +80,7 @@ TEST_F(OsTest, Environment)
   // Make sure the environment has some entries with '=' in the value.
   os::setenv("SOME_SPECIAL_FLAG", "--flag=foobar");
 
-  char** environ = os::environ();
+  char** environ = os::raw::environment();
 
   hashmap<string, string> environment = os::environment();
 
@@ -958,7 +958,7 @@ TEST_F(OsTest, Shell)
 
   // The `|| true`` necessary so that os::shell() sees a success
   // exit code and returns stdout (which we have piped stderr to).
-  result = os::shell("ls /tmp/foobar889076 2>&1 || true");
+  result = os::shell("LC_ALL=C ls /tmp/foobar889076 2>&1 || true");
   ASSERT_SOME(result);
   EXPECT_TRUE(strings::contains(result.get(), "No such file or directory"));
 
