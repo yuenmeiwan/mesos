@@ -31,6 +31,7 @@
 
 #include "slave/containerizer/mesos/provisioner/backends/bind.hpp"
 #include "slave/containerizer/mesos/provisioner/backends/copy.hpp"
+ #include "slave/containerizer/mesos/provisioner/backends/overlay.hpp"
 
 #include "tests/flags.hpp"
 #include "tests/utils.hpp"
@@ -47,6 +48,53 @@ namespace internal {
 namespace tests {
 
 #ifdef __linux__
+
+class OverlayBackendTest : public TemporaryDirectoryTest {};
+
+// Provision a rootfs using multiple layers with the overlay backend.
+TEST_F(OverlayBackendTest, ROOT_OverlayBackend)
+{
+  string layer1 = path::join(os::getcwd(), "source1");
+  ASSERT_SOME(os::mkdir(layer1));
+  ASSERT_SOME(os::mkdir(path::join(layer1, "dir1")));
+  ASSERT_SOME(os::write(path::join(layer1, "dir1", "1"), "1"));
+  ASSERT_SOME(os::write(path::join(layer1, "file"), "test1"));
+
+  string layer2 = path::join(os::getcwd(), "source2");
+  ASSERT_SOME(os::mkdir(layer2));
+  ASSERT_SOME(os::mkdir(path::join(layer2, "dir2")));
+  ASSERT_SOME(os::write(path::join(layer2, "dir2", "2"), "2"));
+  ASSERT_SOME(os::write(path::join(layer2, "file"), "test2"));
+
+  string rootfs = path::join(os::getcwd(), "rootfs");
+
+  hashmap<string, Owned<Backend>> backends = Backend::create(slave::Flags());
+  ASSERT_TRUE(backends.contains("overlay"));
+
+  AWAIT_READY(backends["overlay"]->provision({layer1, layer2}, rootfs));
+
+  EXPECT_TRUE(os::exists(path::join(rootfs, "dir1", "1")));
+  Try<string> read = os::read(path::join(rootfs, "dir1", "1"));
+  ASSERT_SOME(read);
+  EXPECT_EQ(read.get(), "1");
+
+  EXPECT_TRUE(os::exists(path::join(rootfs, "dir2", "2")));
+  read = os::read(path::join(rootfs, "dir2", "2"));
+  ASSERT_SOME(read);
+  EXPECT_EQ(read.get(), "2");
+
+  EXPECT_TRUE(os::exists(path::join(rootfs, "file")));
+  read = os::read(path::join(rootfs, "file"));
+  ASSERT_SOME(read);
+
+  // Last layer should overwrite existing file.
+  EXPECT_EQ(read.get(), "test2");
+
+  AWAIT_READY(backends["copy"]->destroy(rootfs));
+
+  EXPECT_FALSE(os::exists(rootfs));
+}
+
 class BindBackendTest : public TemporaryDirectoryTest
 {
 protected:
