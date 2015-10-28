@@ -31,7 +31,7 @@
 
 #include "slave/containerizer/mesos/provisioner/backends/bind.hpp"
 #include "slave/containerizer/mesos/provisioner/backends/copy.hpp"
- #include "slave/containerizer/mesos/provisioner/backends/overlay.hpp"
+#include "slave/containerizer/mesos/provisioner/backends/overlay.hpp"
 
 #include "tests/flags.hpp"
 #include "tests/utils.hpp"
