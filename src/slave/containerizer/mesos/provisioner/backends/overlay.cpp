@@ -68,7 +68,7 @@ Try<Owned<Backend>> OverlayBackend::create(const Flags&)
   }
 
   if (!overlaySupported) {
-    return Failure("Overlay filesystem not supported");
+    return Error("Overlay filesystem not supported");
   }
 
   return Owned<Backend>(new OverlayBackend(
