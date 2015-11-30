@@ -30,12 +30,9 @@ class OverlayBackendProcess;
 
 
 // This is a specialized backend that is useful for deploying multi-layer images
-// using the overlayfs-based backend. NOTE:
-// 1) OverlayBackend does not support single images.
+// using the overlayfs-based backend.
+// 1) OverlayBackend does not support images with a single layer.
 // 2) The filesystem is read-only.
-//    N.B. Since the filesystem is read-only, '--sandbox_directory' must
-//    already exist within the filesystem because the filesystem isolator
-//    is unable to create it!
 class OverlayBackend : public Backend
 {
 public:

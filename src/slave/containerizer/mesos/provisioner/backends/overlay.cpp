@@ -56,6 +56,21 @@ Try<Owned<Backend>> OverlayBackend::create(const Flags&)
     return Error("OverlayBackend requires root privileges");
   }
 
+  std::ifstream filesystem("/proc/filesystems");
+  std::string line;
+  std::string str("nodev\toverlay");
+  bool overlaySupported = false;
+  while (std::getline(filesystem, line))
+  {
+      if (line.compare(str) == 0) {
+        overlaySupported = true;
+      }
+  }
+
+  if (!overlaySupported) {
+    return Failure("Overlay filesystem not supported");
+  }
+
   return Owned<Backend>(new OverlayBackend(
       Owned<OverlayBackendProcess>(new OverlayBackendProcess())));
 }
@@ -94,32 +109,17 @@ Future<Nothing> OverlayBackendProcess::provision(
     const vector<string>& layers,
     const string& rootfs)
 {
-  std::ifstream filesystem("/proc/filesystems");
-  std::string line;
-  std::string str("nodev\toverlay");
-  bool overlay_supported = false;
-  while (std::getline(filesystem, line))
-  {
-      if (line.compare(str) == 0) {
-        overlay_supported = true;
-      }
-  }
-
-  if (!overlay_supported) {
-    return Failure("Overlay filesystem not supported");
-  }
-
   if (layers.size() == 0) {
     return Failure("No filesystem layer provided");
   }
 
   if (layers.size() == 1) {
-    return Failure("Need more than one image for overlay");
+    return Failure("Need more than one layer for overlay");
   }
 
   Try<Nothing> mkdir = os::mkdir(rootfs);
   if (mkdir.isError()) {
-    return Failure("Failed to create container rootfs at " + rootfs);
+    return Failure("Failed to create container rootfs at " + 'rootfs');
   }
 
   // The specified lower directories will be stacked beginning from the

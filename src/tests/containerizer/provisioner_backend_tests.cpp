@@ -53,45 +53,58 @@ class OverlayBackendTest : public TemporaryDirectoryTest {};
 // Provision a rootfs using multiple layers with the overlay backend.
 TEST_F(OverlayBackendTest, ROOT_OverlayBackend)
 {
-  string layer1 = path::join(os::getcwd(), "source1");
-  ASSERT_SOME(os::mkdir(layer1));
-  ASSERT_SOME(os::mkdir(path::join(layer1, "dir1")));
-  ASSERT_SOME(os::write(path::join(layer1, "dir1", "1"), "1"));
-  ASSERT_SOME(os::write(path::join(layer1, "file"), "test1"));
+  std::ifstream filesystem("/proc/filesystems");
+  std::string line;
+  std::string str("nodev\toverlay");
+  bool overlaySupported = false;
+  while (std::getline(filesystem, line))
+  {
+      if (line.compare(str) == 0) {
+        overlaySupported = true;
+      }
+  }
 
-  string layer2 = path::join(os::getcwd(), "source2");
-  ASSERT_SOME(os::mkdir(layer2));
-  ASSERT_SOME(os::mkdir(path::join(layer2, "dir2")));
-  ASSERT_SOME(os::write(path::join(layer2, "dir2", "2"), "2"));
-  ASSERT_SOME(os::write(path::join(layer2, "file"), "test2"));
+  if (overlaySupported) {
+    string layer1 = path::join(os::getcwd(), "source1");
+    ASSERT_SOME(os::mkdir(layer1));
+    ASSERT_SOME(os::mkdir(path::join(layer1, "dir1")));
+    ASSERT_SOME(os::write(path::join(layer1, "dir1", "1"), "1"));
+    ASSERT_SOME(os::write(path::join(layer1, "file"), "test1"));
 
-  string rootfs = path::join(os::getcwd(), "rootfs");
+    string layer2 = path::join(os::getcwd(), "source2");
+    ASSERT_SOME(os::mkdir(layer2));
+    ASSERT_SOME(os::mkdir(path::join(layer2, "dir2")));
+    ASSERT_SOME(os::write(path::join(layer2, "dir2", "2"), "2"));
+    ASSERT_SOME(os::write(path::join(layer2, "file"), "test2"));
 
-  hashmap<string, Owned<Backend>> backends = Backend::create(slave::Flags());
-  ASSERT_TRUE(backends.contains("overlay"));
+    string rootfs = path::join(os::getcwd(), "rootfs");
 
-  AWAIT_READY(backends["overlay"]->provision({layer1, layer2}, rootfs));
+    hashmap<string, Owned<Backend>> backends = Backend::create(slave::Flags());
+    ASSERT_TRUE(backends.contains("overlay"));
 
-  EXPECT_TRUE(os::exists(path::join(rootfs, "dir1", "1")));
-  Try<string> read = os::read(path::join(rootfs, "dir1", "1"));
-  ASSERT_SOME(read);
-  EXPECT_EQ(read.get(), "1");
+    AWAIT_READY(backends["overlay"]->provision({layer1, layer2}, rootfs));
 
-  EXPECT_TRUE(os::exists(path::join(rootfs, "dir2", "2")));
-  read = os::read(path::join(rootfs, "dir2", "2"));
-  ASSERT_SOME(read);
-  EXPECT_EQ(read.get(), "2");
+    EXPECT_TRUE(os::exists(path::join(rootfs, "dir1", "1")));
+    Try<string> read = os::read(path::join(rootfs, "dir1", "1"));
+    ASSERT_SOME(read);
+    EXPECT_EQ(read.get(), "1");
 
-  EXPECT_TRUE(os::exists(path::join(rootfs, "file")));
-  read = os::read(path::join(rootfs, "file"));
-  ASSERT_SOME(read);
+    EXPECT_TRUE(os::exists(path::join(rootfs, "dir2", "2")));
+    read = os::read(path::join(rootfs, "dir2", "2"));
+    ASSERT_SOME(read);
+    EXPECT_EQ(read.get(), "2");
 
-  // Last layer should overwrite existing file.
-  EXPECT_EQ(read.get(), "test2");
+    EXPECT_TRUE(os::exists(path::join(rootfs, "file")));
+    read = os::read(path::join(rootfs, "file"));
+    ASSERT_SOME(read);
 
-  AWAIT_READY(backends["copy"]->destroy(rootfs));
+    // Last layer should overwrite existing file.
+    EXPECT_EQ(read.get(), "test2");
 
-  EXPECT_FALSE(os::exists(rootfs));
+    AWAIT_READY(backends["copy"]->destroy(rootfs));
+
+    EXPECT_FALSE(os::exists(rootfs));
+  }
 }
 
 class BindBackendTest : public TemporaryDirectoryTest
