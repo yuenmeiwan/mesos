@@ -1,16 +1,14 @@
-/**
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License
-*/
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License
 
 #include <errno.h>
 #include <limits.h>
@@ -89,6 +87,7 @@
 #include <stout/numify.hpp>
 #include <stout/option.hpp>
 #include <stout/os.hpp>
+#include <stout/os/strerror.hpp>
 #include <stout/path.hpp>
 #include <stout/strings.hpp>
 #include <stout/synchronized.hpp>
@@ -186,7 +185,7 @@ public:
   // Enqueues a future to a response that will get waited on (up to
   // some timeout) and then sent once all previously enqueued
   // responses have been processed (e.g., waited for and sent).
-  void handle(Future<Response>* future, const Request& request);
+  void handle(const Future<Response>& future, const Request& request);
 
 private:
   // Starts "waiting" on the next available future response.
@@ -209,16 +208,11 @@ private:
   // are acceptable and whether to persist the connection.
   struct Item
   {
-    Item(const Request& _request, Future<Response>* _future)
+    Item(const Request& _request, const Future<Response>& _future)
       : request(_request), future(_future) {}
 
-    ~Item()
-    {
-      delete future;
-    }
-
     const Request request; // Make a copy.
-    Future<Response>* future;
+    Future<Response> future; // Make a copy.
   };
 
   queue<Item*> items;
@@ -383,7 +377,7 @@ public:
 
   ProcessReference use(const UPID& pid);
 
-  bool handle(
+  void handle(
       const Socket& socket,
       Request* request);
 
@@ -739,49 +733,41 @@ void initialize(const string& delegate)
   // TODO(benh): Return an error if attempting to initialize again
   // with a different delegate than originally specified.
 
-  // static pthread_once_t init = PTHREAD_ONCE_INIT;
-  // pthread_once(&init, ...);
-
-  static std::atomic_bool initialized(false);
-  static std::atomic_bool initializing(true);
+  // NOTE: Rather than calling `initialize` once at the root of the
+  // dependency tree; we currently rely on libprocess dependency
+  // declaration by invoking `initialize` prior to use. This is done
+  // frequently throughout the code base. Therefore we chose to use
+  // atomics rather than `Once`, as the overhead of a mutex and
+  // condition variable is exessive here.
+  static std::atomic_bool initialize_started(false);
+  static std::atomic_bool initialize_complete(false);
 
   // Try and do the initialization or wait for it to complete.
-  // TODO(neilc): Try to simplify and/or document this logic.
-  if (initialized.load() && !initializing.load()) {
+
+  // If already initialized, there's nothing more to do.
+  // NOTE: This condition is true as soon as the thread performing
+  // initialization sets `initialize_complete` to `true` in the *middle*
+  // of initialization.  This is done because some methods called by
+  // initialization will themselves call `process::initialize`.
+  if (initialize_started.load() && initialize_complete.load()) {
     return;
-  } else if (initialized.load() && initializing.load()) {
-    while (initializing.load());
-    return;
+
   } else {
-    // `compare_exchange_strong` needs an lvalue.
+    // NOTE: `compare_exchange_strong` needs an lvalue.
     bool expected = false;
-    if (!initialized.compare_exchange_strong(expected, true)) {
-      while (initializing.load());
+
+    // Any thread that calls `initialize` prior to when `initialize_complete`
+    // is set to `true` will reach this.
+
+    // Atomically sets `initialize_started` to `true`.  The thread that
+    // successfully sets `initialize_started` to `true` will move on to
+    // perform the initialization logic.  All others will wait here for
+    // initialization to complete.
+    if (!initialize_started.compare_exchange_strong(expected, true)) {
+      while (!initialize_complete.load());
       return;
     }
   }
-
-//   // Install signal handler.
-//   struct sigaction sa;
-
-//   sa.sa_handler = (void (*) (int)) sigbad;
-//   sigemptyset (&sa.sa_mask);
-//   sa.sa_flags = SA_RESTART;
-
-//   sigaction (SIGTERM, &sa, NULL);
-//   sigaction (SIGINT, &sa, NULL);
-//   sigaction (SIGQUIT, &sa, NULL);
-//   sigaction (SIGSEGV, &sa, NULL);
-//   sigaction (SIGILL, &sa, NULL);
-// #ifdef SIGBUS
-//   sigaction (SIGBUS, &sa, NULL);
-// #endif
-// #ifdef SIGSTKFLT
-//   sigaction (SIGSTKFLT, &sa, NULL);
-// #endif
-//   sigaction (SIGABRT, &sa, NULL);
-
-//   sigaction (SIGFPE, &sa, NULL);
 
 #ifdef __sun__
   /* Need to ignore this since we can't do MSG_NOSIGNAL on Solaris. */
@@ -808,21 +794,6 @@ void initialize(const string& delegate)
   long cpus = process_manager->init_threads();
 
   Clock::initialize(lambda::bind(&timedout, lambda::_1));
-
-//   ev_child_init(&child_watcher, child_exited, pid, 0);
-//   ev_child_start(loop, &cw);
-
-//   /* Install signal handler. */
-//   struct sigaction sa;
-
-//   sa.sa_handler = ev_sighandler;
-//   sigfillset (&sa.sa_mask);
-//   sa.sa_flags = SA_RESTART; /* if restarting works we save one iteration */
-//   sigaction (w->signum, &sa, 0);
-
-//   sigemptyset (&sa.sa_mask);
-//   sigaddset (&sa.sa_mask, w->signum);
-//   sigprocmask (SIG_UNBLOCK, &sa.sa_mask, 0);
 
   __address__ = Address::LOCALHOST_ANY();
 
@@ -919,9 +890,9 @@ void initialize(const string& delegate)
     PLOG(FATAL) << "Failed to initialize: " << listen.error();
   }
 
-  // Need to set `initializing` here so that we can actually invoke `spawn()`
-  // below for the garbage collector.
-  initializing.store(false);
+  // Need to set `initialize_complete` here so that we can actually
+  // invoke `accept()` and `spawn()` below.
+  initialize_complete.store(true);
 
   __s__->accept()
     .onAny(lambda::bind(&internal::on_accept, lambda::_1));
@@ -956,9 +927,6 @@ void initialize(const string& delegate)
   // Initialize the mime types.
   mime::initialize();
 
-  // Initialize the response statuses.
-  http::initialize();
-
   // Add a route for getting process information.
   lambda::function<Future<Response>(const Request&)> __processes__ =
     lambda::bind(&ProcessManager::__processes__, process_manager, lambda::_1);
@@ -970,12 +938,23 @@ void initialize(const string& delegate)
 }
 
 
+// Gracefully winds down libprocess in roughly the reverse order of
+// initialization.
 void finalize()
 {
-  delete process_manager;
+  // The clock is only paused during tests.  Pausing may lead to infinite waits
+  // during clean up, so we make sure the clock is running normally.
+  Clock::resume();
 
-  // TODO(benh): Finalize/shutdown Clock so that it doesn't attempt
-  // to dereference 'process_manager' in the 'timedout' callback.
+  // This will terminate any existing processes created via `spawn()`,
+  // like `gc`, `help`, `Logging()`, `Profiler()`, and `System()`.
+  // NOTE: This will also stop the event loop.
+  delete process_manager;
+  process_manager = NULL;
+
+  // The clock must be cleaned up after the `process_manager` as processes
+  // may otherwise add timers after cleaning up.
+  Clock::finalize();
 }
 
 
@@ -1013,12 +992,12 @@ HttpProxy::~HttpProxy()
     Item* item = items.front();
 
     // Attempt to discard the future.
-    item->future->discard();
+    item->future.discard();
 
     // But it might have already been ready. In general, we need to
     // wait until this future is potentially ready in order to attempt
     // to close a pipe if one exists.
-    item->future->onReady([](const Response& response) {
+    item->future.onReady([](const Response& response) {
       // Cleaning up a response (i.e., closing any open Pipes in the
       // event Response::type is PIPE).
       if (response.type == Response::PIPE) {
@@ -1036,11 +1015,11 @@ HttpProxy::~HttpProxy()
 
 void HttpProxy::enqueue(const Response& response, const Request& request)
 {
-  handle(new Future<Response>(response), request);
+  handle(Future<Response>(response), request);
 }
 
 
-void HttpProxy::handle(Future<Response>* future, const Request& request)
+void HttpProxy::handle(const Future<Response>& future, const Request& request)
 {
   items.push(new Item(request, future));
 
@@ -1054,7 +1033,7 @@ void HttpProxy::next()
 {
   if (items.size() > 0) {
     // Wait for any transition of the future.
-    items.front()->future->onAny(
+    items.front()->future.onAny(
         defer(self(), &HttpProxy::waited, lambda::_1));
   }
 }
@@ -1065,11 +1044,11 @@ void HttpProxy::waited(const Future<Response>& future)
   CHECK(items.size() > 0);
   Item* item = items.front();
 
-  CHECK(future == *item->future);
+  CHECK(future == item->future);
 
   // Process the item and determine if we're done or not (so we know
   // whether to start waiting on the next responses).
-  bool processed = process(*item->future, item->request);
+  bool processed = process(item->future, item->request);
 
   items.pop();
   delete item;
@@ -1104,14 +1083,14 @@ bool HttpProxy::process(const Future<Response>& future, const Request& request)
           VLOG(1) << "Returning '404 Not Found' for path '" << path << "'";
           socket_manager->send(NotFound(), request, socket);
       } else {
-        const char* error = strerror(errno);
+        const string error = os::strerror(errno);
         VLOG(1) << "Failed to send file at '" << path << "': " << error;
         socket_manager->send(InternalServerError(), request, socket);
       }
     } else {
       struct stat s; // Need 'struct' because of function named 'stat'.
       if (fstat(fd, &s) != 0) {
-        const char* error = strerror(errno);
+        const string error = os::strerror(errno);
         VLOG(1) << "Failed to send file at '" << path << "': " << error;
         socket_manager->send(InternalServerError(), request, socket);
       } else if (S_ISDIR(s.st_mode)) {
@@ -2201,7 +2180,7 @@ ProcessReference ProcessManager::use(const UPID& pid)
 }
 
 
-bool ProcessManager::handle(
+void ProcessManager::handle(
     const Socket& socket,
     Request* request)
 {
@@ -2238,7 +2217,7 @@ bool ProcessManager::handle(
       }
 
       delete request;
-      return accepted;
+      return;
     }
 
     VLOG(1) << "Failed to handle libprocess message: "
@@ -2246,7 +2225,7 @@ bool ProcessManager::handle(
             << " (User-Agent: " << request->headers["User-Agent"] << ")";
 
     delete request;
-    return false;
+    return;
   }
 
   // Treat this as an HTTP request. Start by checking that the path
@@ -2263,7 +2242,7 @@ bool ProcessManager::handle(
 
     // Cleanup request.
     delete request;
-    return false;
+    return;
   }
 
   // Ignore requests with relative paths (i.e., contain "/..").
@@ -2280,7 +2259,7 @@ bool ProcessManager::handle(
 
     // Cleanup request.
     delete request;
-    return false;
+    return;
   }
 
   // Split the path by '/'.
@@ -2333,15 +2312,26 @@ bool ProcessManager::handle(
 
         // Cleanup request.
         delete request;
-        return false;
+        return;
       }
     }
   }
 
   if (receiver) {
+    // The promise is created here but its ownership is passed
+    // into the HttpEvent created below.
+    Promise<Response>* promise(new Promise<Response>());
+
+    PID<HttpProxy> proxy = socket_manager->proxy(socket);
+
+    // Enqueue the response with the HttpProxy so that it respects the
+    // order of requests to account for HTTP/1.1 pipelining.
+    dispatch(proxy, &HttpProxy::handle, promise->future(), *request);
+
     // TODO(benh): Use the sender PID in order to capture
     // happens-before timing relationships for testing.
-    return deliver(receiver, new HttpEvent(socket, request));
+    deliver(receiver, new HttpEvent(request, promise));
+    return;
   }
 
   // This has no receiver, send error response.
@@ -2356,7 +2346,6 @@ bool ProcessManager::handle(
 
   // Cleanup request.
   delete request;
-  return false;
 }
 
 
@@ -3096,20 +3085,8 @@ void ProcessBase::visit(const HttpEvent& event)
 
   while (Path(name).dirname() != name) {
     if (handlers.http.count(name) > 0) {
-      // Create the promise to link with whatever gets returned, as well
-      // as a future to wait for the response.
-      std::shared_ptr<Promise<Response>> promise(new Promise<Response>());
-
-      Future<Response>* future = new Future<Response>(promise->future());
-
-      // Get the HttpProxy pid for this socket.
-      PID<HttpProxy> proxy = socket_manager->proxy(event.socket);
-
-      // Let the HttpProxy know about this request (via the future).
-      dispatch(proxy, &HttpProxy::handle, future, *event.request);
-
       // Now call the handler and associate the response with the promise.
-      promise->associate(handlers.http[name](*event.request));
+      event.response->associate(handlers.http[name](*event.request));
 
       return;
     }
@@ -3144,12 +3121,7 @@ void ProcessBase::visit(const HttpEvent& event)
     // extension or we don't have a mapping for? It might be better to
     // just let the browser guess (or do it's own default).
 
-    // Get the HttpProxy pid for this socket.
-    PID<HttpProxy> proxy = socket_manager->proxy(event.socket);
-
-    // Enqueue the response with the HttpProxy so that it respects the
-    // order of requests to account for HTTP/1.1 pipelining.
-    dispatch(proxy, &HttpProxy::enqueue, response, *event.request);
+    event.response->associate(response);
 
     return;
   }
@@ -3157,12 +3129,7 @@ void ProcessBase::visit(const HttpEvent& event)
   VLOG(1) << "Returning '404 Not Found' for"
           << " '" << event.request->url.path << "'";
 
-  // Get the HttpProxy pid for this socket.
-  PID<HttpProxy> proxy = socket_manager->proxy(event.socket);
-
-  // Enqueue the response with the HttpProxy so that it respects the
-  // order of requests to account for HTTP/1.1 pipelining.
-  dispatch(proxy, &HttpProxy::enqueue, NotFound(), *event.request);
+  event.response->associate(NotFound());
 }
 
 

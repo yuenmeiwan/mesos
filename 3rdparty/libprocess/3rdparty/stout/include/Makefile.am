@@ -40,8 +40,6 @@ nobase_include_HEADERS =		\
   stout/json.hpp			\
   stout/lambda.hpp			\
   stout/linkedhashmap.hpp		\
-  stout/posix/gzip.hpp			\
-  stout/posix/os.hpp			\
   stout/list.hpp			\
   stout/mac.hpp				\
   stout/multihashmap.hpp		\
@@ -53,14 +51,39 @@ nobase_include_HEADERS =		\
   stout/option.hpp			\
   stout/os.hpp				\
   stout/os/bootid.hpp			\
+  stout/os/chdir.hpp			\
   stout/os/close.hpp			\
+  stout/os/constants.hpp		\
   stout/os/environment.hpp		\
   stout/os/exists.hpp			\
   stout/os/fcntl.hpp			\
   stout/os/fork.hpp			\
   stout/os/ftruncate.hpp		\
+  stout/os/getcwd.hpp			\
   stout/os/killtree.hpp			\
   stout/os/linux.hpp			\
+  stout/os/ls.hpp			\
+  stout/os/mkdir.hpp			\
+  stout/os/mktemp.hpp			\
+  stout/os/open.hpp			\
+  stout/os/os.hpp			\
+  stout/os/osx.hpp			\
+  stout/os/permissions.hpp		\
+  stout/os/process.hpp			\
+  stout/os/pstree.hpp			\
+  stout/os/read.hpp			\
+  stout/os/realpath.hpp			\
+  stout/os/rename.hpp			\
+  stout/os/rm.hpp			\
+  stout/os/sendfile.hpp			\
+  stout/os/shell.hpp			\
+  stout/os/signals.hpp			\
+  stout/os/stat.hpp			\
+  stout/os/strerror.hpp			\
+  stout/os/sysctl.hpp			\
+  stout/os/touch.hpp			\
+  stout/os/utime.hpp			\
+  stout/os/write.hpp			\
   stout/os/posix/bootid.hpp		\
   stout/os/posix/exists.hpp		\
   stout/os/posix/fcntl.hpp		\
@@ -74,23 +97,6 @@ nobase_include_HEADERS =		\
   stout/os/posix/shell.hpp		\
   stout/os/posix/signals.hpp		\
   stout/os/posix/stat.hpp		\
-  stout/os/ls.hpp			\
-  stout/os/open.hpp			\
-  stout/os/os.hpp			\
-  stout/os/osx.hpp			\
-  stout/os/process.hpp			\
-  stout/os/read.hpp			\
-  stout/os/realpath.hpp			\
-  stout/os/rename.hpp			\
-  stout/os/rm.hpp			\
-  stout/os/sendfile.hpp			\
-  stout/os/shell.hpp			\
-  stout/os/signals.hpp			\
-  stout/os/stat.hpp			\
-  stout/os/permissions.hpp		\
-  stout/os/pstree.hpp			\
-  stout/os/sysctl.hpp			\
-  stout/os/write.hpp			\
   stout/os/raw/environment.hpp		\
   stout/os/windows/bootid.hpp		\
   stout/os/windows/exists.hpp		\
@@ -109,6 +115,8 @@ nobase_include_HEADERS =		\
   stout/preprocessor.hpp		\
   stout/proc.hpp			\
   stout/protobuf.hpp			\
+  stout/posix/gzip.hpp			\
+  stout/posix/os.hpp			\
   stout/recordio.hpp			\
   stout/result.hpp			\
   stout/set.hpp				\
@@ -119,9 +127,9 @@ nobase_include_HEADERS =		\
   stout/subcommand.hpp			\
   stout/svn.hpp				\
   stout/synchronized.hpp		\
-  stout/tests/utils.hpp			\
   stout/thread_local.hpp		\
   stout/try.hpp				\
+  stout/tests/utils.hpp			\
   stout/unimplemented.hpp		\
   stout/unreachable.hpp			\
   stout/utils.hpp			\

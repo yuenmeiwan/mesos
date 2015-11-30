@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef __LOG_REPLICA_HPP__
 #define __LOG_REPLICA_HPP__
@@ -60,7 +58,7 @@ public:
   // process will later decide if this replica can be re-allowed to
   // vote depending on the status of other replicas.
   explicit Replica(const std::string& path);
-  ~Replica();
+  virtual ~Replica();
 
   // Returns all the actions between the specified positions, unless
   // those positions are invalid, in which case returns an error.
@@ -91,8 +89,10 @@ public:
   // Returns the highest implicit promise this replica has given.
   process::Future<uint64_t> promised() const;
 
-  // Updates the status of this replica.
-  process::Future<bool> update(const Metadata::Status& status);
+  // Updates the status of this replica. Returns true if status was
+  // updated successfully, false otherwise. Made "virtual" for
+  // mocking in tests.
+  virtual process::Future<bool> update(const Metadata::Status& status);
 
   // Returns the PID associated with this replica.
   process::PID<ReplicaProcess> pid() const;

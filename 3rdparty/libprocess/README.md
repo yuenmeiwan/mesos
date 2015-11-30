@@ -183,7 +183,7 @@ int main(int argc, char** argv)
 ~~~
 
 Note that the templated type of the future must be the exact
-same as the promise, you can not create a covariant or
+same as the promise: you cannot create a covariant or
 contravariant future. Unlike `Promise`, a `Future` can be both
 copied and assigned:
 
@@ -339,43 +339,192 @@ private:
 ~~~
 -->
 
----
+## `HTTP`
 
-## HTTP
+libprocess provides facilities for communicating between actors via HTTP
+messages. With the advent of the HTTP API, HTTP is becoming the preferred mode
+of communication.
 
 ### `route`
 
-`route` installs an http endpoint onto a process.
+`route` installs an HTTP endpoint onto a process. Let's define a simple process
+that installs an endpoint upon initialization:
 
-<!---
 ~~~{.cpp}
 using namespace process;
 using namespace process::http;
 
-class QueueProcess : public Process<QueueProcess>
+class HttpProcess : public Process<HttpProcess>
 {
-public:
-  QueueProcess() : ProcessBase("queue") {}
-
-  virtual void initialize() {
-    route("/enqueue", [] (Request request)
-    {
-      // Parse argument from 'request.query' or 'request.body.
-      enqueue(arg);
-      return OK();
+protected:
+  virtual void initialize()
+  {
+    route("/testing", None(), [](const Request& request) {
+      return testing(request.query);
     });
   }
 };
 
-// $ curl localhost:1234/queue/enqueue?value=42
+
+class Http
+{
+public:
+  Http() : process(new HttpProcess())
+  {
+    spawn(process.get());
+  }
+
+  virtual ~Http()
+  {
+    terminate(process.get());
+    wait(process.get());
+  }
+
+  Owned<HttpProcess> process;
+};
 ~~~
----->
 
----
+Now if our program instantiates this class, we can do something like:
+`$ curl localhost:1234/testing?value=42`
 
-## Testing
+Note that the port at which this endpoint can be reached is the port libprocess
+has bound to, which is determined by the `LIBPROCESS_PORT` environment variable.
+In the case of the Mesos master or agent, this environment variable is set
+according to the `--port` command-line flag.
 
----
+### `get`
+
+`get` will hit an HTTP endpoint with a GET request and return a `Future`
+containing the response. We can pass it either a libprocess `UPID` or a `URL`.
+Here's an example hitting the endpoint assuming we have a `UPID` named `upid`:
+
+~~~{.cpp}
+Future<Response> future = get(upid, "testing");
+~~~
+
+Or let's assume our serving process has been set up on a remote server and we
+want to hit its endpoint. We'll construct a `URL` for the address and then call
+`get`:
+
+~~~{.cpp}
+URL url = URL("http", "hostname", 1234, "/testing");
+
+Future<Response> future = get(url);
+~~~
+
+### `post` and `requestDelete`
+
+The `post` and `requestDelete` functions will similarly send POST and DELETE
+requests to an HTTP endpoint. Their invocation is analogous to `get`.
+
+### `Connection`
+
+A `Connection` represents a connection to an HTTP server. `connect`
+can be used to connect to a server, and returns a `Future` containing the
+`Connection`. Let's open a connection to a server and send some requests:
+
+~~~{.cpp}
+Future<Connection> connect = connect(url);
+
+connect.await();
+
+Connection connection = connect.get();
+
+Request request;
+request.method = "GET";
+request.url = url;
+request.body = "Amazing prose goes here.";
+request.keepAlive = true;
+
+Future<Response> response = connection.send(request);
+~~~
+
+It's also worth noting that if multiple requests are sent in succession on a
+`Connection`, they will be automatically pipelined.
+
+## Clock Management and Timeouts
+
+Asynchronous programs often use timeouts, e.g., because a process that initiates
+an asynchronous operation wants to take action if the operation hasn't completed
+within a certain time bound. To facilitate this, libprocess provides a set of
+abstractions that simplify writing timeout logic. Importantly, test code has the
+ability to manipulate the clock, in order to ensure that timeout logic is
+exercised (without needing to block the test program until the appropriate
+amount of system time has elapsed).
+
+To invoke a function after a certain amount of time has elapsed, use `delay`:
+
+~~~{.cpp}
+using namespace process;
+
+class DelayedProcess : public Process<DelayedProcess>
+{
+public:
+  void action(const string& name)
+  {
+    LOG(INFO) << "hello, " << name;
+
+    promise.set(Nothing());
+  }
+
+  Promise<Nothing> promise;
+};
+
+
+int main()
+{
+  DelayedProcess process;
+
+  spawn(process);
+
+  LOG(INFO) << "Starting to wait";
+
+  delay(Seconds(5), process.self(), &DelayedProcess::action, "Neil");
+
+  AWAIT_READY(process.promise.future());
+
+  LOG(INFO) << "Done waiting";
+
+  terminate(process);
+  wait(process);
+
+  return 0;
+}
+~~~
+
+This invokes the `action` function after (at least) five seconds of time
+have elapsed. When writing unit tests for this code, blocking the test for five
+seconds is undesirable. To avoid this, we can use `Clock::advance`:
+
+~~~{.cpp}
+
+int main()
+{
+  DelayedProcess process;
+
+  spawn(process);
+
+  LOG(INFO) << "Starting to wait";
+
+  Clock::pause();
+
+  delay(Seconds(5), process.self(), &DelayedProcess::action, "Neil");
+
+  Clock::advance(Seconds(5));
+
+  AWAIT_READY(process.promise.future());
+
+  LOG(INFO) << "Done waiting";
+
+  terminate(process);
+  wait(process);
+
+  Clock::resume();
+
+  return 0;
+}
+~~~
+
 
 ## Miscellaneous Primitives
 

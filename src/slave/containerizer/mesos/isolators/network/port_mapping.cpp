@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <limits.h>
 #include <string.h>
@@ -435,7 +433,7 @@ JSON::Object json(const Iterable& ranges)
 
     values.add_range()->CopyFrom(value);
   }
-  return JSON::Protobuf(values);
+  return JSON::protobuf(values);
 }
 
 
@@ -914,7 +912,7 @@ int PortMappingStatistics::execute()
          << " in namespace " << flags.pid.get() << endl;
   }
 
-  cout << stringify(JSON::Protobuf(result));
+  cout << stringify(JSON::protobuf(result));
   return 0;
 }
 
@@ -1387,19 +1385,38 @@ Try<Isolator*> PortMappingIsolatorProcess::create(const Flags& flags)
   if (flags.egress_unique_flow_per_container) {
     // Prepare a fq_codel queueing discipline on host public interface
     // (eth0) for egress flow classification.
-    //
-    // TODO(cwang): Maybe we can continue when some other egress qdisc
-    // exists because this is not a necessary qdisc for network
-    // isolation, but we don't want inconsistency, so we just fail in
-    // this case. See details in MESOS-2370.
-    Try<bool> createHostEth0EgressQdisc = fq_codel::create(
-        eth0.get(),
-        EGRESS_ROOT,
-        HOST_TX_FQ_CODEL_HANDLE);
-    if (createHostEth0EgressQdisc.isError()) {
+    Try<bool> existHostEth0EgressFqCodel =
+      fq_codel::exists(eth0.get(), EGRESS_ROOT);
+
+    if (existHostEth0EgressFqCodel.isError()) {
       return Error(
-          "Failed to create the egress qdisc on " + eth0.get() +
-          ": " + createHostEth0EgressQdisc.error());
+          "Failed to check egress qdisc existence on " + eth0.get() +
+          ": " + existHostEth0EgressFqCodel.error());
+    }
+
+    if (existHostEth0EgressFqCodel.get()) {
+      // TODO(cwang): We don't know if this existed fq_codel qdisc is
+      // created by ourselves or someone else.
+      LOG(INFO) << "Using an existed egress qdisc on " << eth0.get();
+    } else {
+      // Either there is no qdisc at all, or there is some non-fq_codel
+      // qdisc at root. We try to create one to check which is true.
+      Try<bool> createHostEth0EgressQdisc = fq_codel::create(
+          eth0.get(),
+          EGRESS_ROOT,
+          HOST_TX_FQ_CODEL_HANDLE);
+
+      if (createHostEth0EgressQdisc.isError()) {
+        return Error(
+            "Failed to create the egress qdisc on " + eth0.get() +
+            ": " + createHostEth0EgressQdisc.error());
+      } else if (!createHostEth0EgressQdisc.get()) {
+        // TODO(cwang): Maybe we can continue when some other egress
+        // qdisc exists because this is not a necessary qdisc for
+        // network isolation, but we don't want inconsistency, so we
+        // just fail in this case. See details in MESOS-2370.
+        return Error("Egress qdisc already exists on " + eth0.get());
+      }
     }
 
     // TODO(cwang): Make sure DEFAULT_FLOWS is large enough so that
@@ -2363,72 +2380,6 @@ Future<Nothing> PortMappingIsolatorProcess::isolate(
       return Failure(
           "The ARP packet filter on host " + eth0 + " already exists");
     }
-
-    if (flags.egress_unique_flow_per_container) {
-      // Create a new ICMP filter on host eth0 egress for classifying
-      // packets into a reserved flow.
-      Try<bool> icmpEth0Egress = filter::icmp::create(
-          eth0,
-          HOST_TX_FQ_CODEL_HANDLE,
-          icmp::Classifier(None()),
-          Priority(ICMP_FILTER_PRIORITY, NORMAL),
-          Handle(HOST_TX_FQ_CODEL_HANDLE, ICMP_FLOWID));
-
-      if (icmpEth0Egress.isError()) {
-        ++metrics.adding_eth0_egress_filters_errors;
-
-        return Failure(
-            "Failed to create the ICMP flow classifier on host " +
-            eth0 + ": " + icmpEth0Egress.error());
-      } else if (!icmpEth0Egress.get()) {
-        ++metrics.adding_eth0_egress_filters_already_exist;
-
-        return Failure(
-            "The ICMP flow classifier on host " + eth0 + " already exists");
-      }
-
-      // Create a new ARP filter on host eth0 egress for classifying
-      // packets into a reserved flow.
-      Try<bool> arpEth0Egress = filter::basic::create(
-          eth0,
-          HOST_TX_FQ_CODEL_HANDLE,
-          ETH_P_ARP,
-          Priority(ARP_FILTER_PRIORITY, NORMAL),
-          Handle(HOST_TX_FQ_CODEL_HANDLE, ARP_FLOWID));
-
-      if (arpEth0Egress.isError()) {
-        ++metrics.adding_eth0_egress_filters_errors;
-
-        return Failure(
-            "Failed to create the ARP flow classifier on host " +
-            eth0 + ": " + arpEth0Egress.error());
-      } else if (!arpEth0Egress.get()) {
-        ++metrics.adding_eth0_egress_filters_already_exist;
-
-        return Failure(
-            "The ARP flow classifier on host " + eth0 + " already exists");
-      }
-
-      // Rest of the host packets go to a reserved flow.
-      Try<bool> defaultEth0Egress = filter::basic::create(
-          eth0,
-          HOST_TX_FQ_CODEL_HANDLE,
-          ETH_P_ALL,
-          Priority(DEFAULT_FILTER_PRIORITY, NORMAL),
-          Handle(HOST_TX_FQ_CODEL_HANDLE, HOST_FLOWID));
-
-      if (defaultEth0Egress.isError()) {
-        ++metrics.adding_eth0_egress_filters_errors;
-
-        return Failure(
-            "Failed to create the default flow classifier on host " +
-            eth0 + ": " + defaultEth0Egress.error());
-      } else if (!defaultEth0Egress.get()) {
-        // NOTE: Since we don't remove this filter on purpose in
-        // _cleanup() (see the comments there), we just continue even
-        // if it already exists, so do nothing here.
-      }
-    }
   } else {
     // This is not the first container in which case we should update
     // filters for ICMP and ARP packets.
@@ -2471,6 +2422,68 @@ Future<Nothing> PortMappingIsolatorProcess::isolate(
 
       return Failure(
           "The ARP packet filter on host " + eth0 + " already exists");
+    }
+  }
+
+  if (flags.egress_unique_flow_per_container) {
+    // Create a new ICMP filter on host eth0 egress for classifying
+    // packets into a reserved flow.
+    Try<bool> icmpEth0Egress = filter::icmp::create(
+        eth0,
+        HOST_TX_FQ_CODEL_HANDLE,
+        icmp::Classifier(None()),
+        Priority(ICMP_FILTER_PRIORITY, NORMAL),
+        Handle(HOST_TX_FQ_CODEL_HANDLE, ICMP_FLOWID));
+
+    if (icmpEth0Egress.isError()) {
+      ++metrics.adding_eth0_egress_filters_errors;
+
+      return Failure(
+          "Failed to create the ICMP flow classifier on host " +
+          eth0 + ": " + icmpEth0Egress.error());
+    } else if (!icmpEth0Egress.get()) {
+      // We try to create the filter every time a container is
+      // launched. Ignore if it already exists.
+    }
+
+    // Create a new ARP filter on host eth0 egress for classifying
+    // packets into a reserved flow.
+    Try<bool> arpEth0Egress = filter::basic::create(
+        eth0,
+        HOST_TX_FQ_CODEL_HANDLE,
+        ETH_P_ARP,
+        Priority(ARP_FILTER_PRIORITY, NORMAL),
+        Handle(HOST_TX_FQ_CODEL_HANDLE, ARP_FLOWID));
+
+    if (arpEth0Egress.isError()) {
+      ++metrics.adding_eth0_egress_filters_errors;
+
+      return Failure(
+          "Failed to create the ARP flow classifier on host " +
+          eth0 + ": " + arpEth0Egress.error());
+    } else if (!arpEth0Egress.get()) {
+      // We try to create the filter every time a container is
+      // launched. Ignore if it already exists.
+    }
+
+    // Rest of the host packets go to a reserved flow.
+    Try<bool> defaultEth0Egress = filter::basic::create(
+        eth0,
+        HOST_TX_FQ_CODEL_HANDLE,
+        ETH_P_ALL,
+        Priority(DEFAULT_FILTER_PRIORITY, NORMAL),
+        Handle(HOST_TX_FQ_CODEL_HANDLE, HOST_FLOWID));
+
+    if (defaultEth0Egress.isError()) {
+      ++metrics.adding_eth0_egress_filters_errors;
+
+      return Failure(
+          "Failed to create the default flow classifier on host " +
+          eth0 + ": " + defaultEth0Egress.error());
+    } else if (!defaultEth0Egress.get()) {
+      // NOTE: Since we don't remove this filter on purpose in
+      // _cleanup() (see the comments there), we just continue even
+      // if it already exists, so do nothing here.
     }
   }
 

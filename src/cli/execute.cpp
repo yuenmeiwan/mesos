@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <iostream>
 #include <vector>
@@ -23,6 +21,7 @@
 #include <mesos/scheduler.hpp>
 #include <mesos/type_utils.hpp>
 
+#include <process/owned.hpp>
 #include <process/pid.hpp>
 
 #include <stout/check.hpp>
@@ -41,6 +40,7 @@
 using namespace mesos;
 using namespace mesos::internal;
 
+using process::Owned;
 using process::UPID;
 
 using std::cerr;
@@ -110,6 +110,11 @@ public:
         "docker_image",
         "Docker image that follows the Docker CLI naming <image>:<tag>."
         "(ie: ubuntu, busybox:latest).");
+
+    add(&containerizer,
+        "containerizer",
+        "Containerizer to be used (ie: docker, mesos)",
+        "mesos");
   }
 
   Option<string> master;
@@ -123,6 +128,7 @@ public:
   bool overwrite;
   bool checkpoint;
   Option<string> docker_image;
+  string containerizer;
 };
 
 
@@ -135,13 +141,15 @@ public:
       const Option<hashmap<string, string>>& _environment,
       const string& _resources,
       const Option<string>& _uri,
-      const Option<string>& _dockerImage)
+      const Option<string>& _dockerImage,
+      const string& _containerizer)
     : name(_name),
       command(_command),
       environment(_environment),
       resources(_resources),
       uri(_uri),
       dockerImage(_dockerImage),
+      containerizer(_containerizer),
       launched(false) {}
 
   virtual ~CommandScheduler() {}
@@ -204,12 +212,33 @@ public:
 
         if (dockerImage.isSome()) {
           ContainerInfo containerInfo;
-          containerInfo.set_type(ContainerInfo::DOCKER);
 
-          ContainerInfo::DockerInfo dockerInfo;
-          dockerInfo.set_image(dockerImage.get());
+          if (containerizer == "mesos") {
+            containerInfo.set_type(ContainerInfo::MESOS);
 
-          containerInfo.mutable_docker()->CopyFrom(dockerInfo);
+            ContainerInfo::MesosInfo mesosInfo;
+
+            Image mesosImage;
+            mesosImage.set_type(Image::DOCKER);
+            mesosImage.mutable_docker()->set_name(dockerImage.get());
+            mesosInfo.mutable_image()->CopyFrom(mesosImage);
+
+            containerInfo.mutable_mesos()->CopyFrom(mesosInfo);
+          } else if (containerizer == "docker") {
+            containerInfo.set_type(ContainerInfo::DOCKER);
+
+            ContainerInfo::DockerInfo dockerInfo;
+            dockerInfo.set_image(dockerImage.get());
+
+            containerInfo.mutable_docker()->CopyFrom(dockerInfo);
+          } else {
+            cerr << "Unsupported containerizer: " << containerizer << endl;;
+
+            driver->abort();
+
+            return;
+          }
+
           task.mutable_container()->CopyFrom(containerInfo);
         }
 
@@ -270,6 +299,7 @@ private:
   const string resources;
   const Option<string> uri;
   const Option<string> dockerImage;
+  const string containerizer;
   bool launched;
 };
 
@@ -338,7 +368,11 @@ int main(int argc, char** argv)
   Option<string> uri = None();
 
   if (flags.package.isSome()) {
-    HDFS hdfs(flags.hadoop);
+    Try<Owned<HDFS>> hdfs = HDFS::create(flags.hadoop);
+    if (hdfs.isError()) {
+      cerr << "Failed to create HDFS client: " << hdfs.error() << endl;
+      return EXIT_FAILURE;
+    }
 
     // TODO(benh): If HDFS is not properly configured with
     // 'fs.default.name' then we'll copy to the local
@@ -351,12 +385,12 @@ int main(int argc, char** argv)
     string path = path::join("/", user.get(), flags.package.get());
 
     // Check if the file exists and remove it if we're overwriting.
-    Try<bool> exists = hdfs.exists(path);
+    Try<bool> exists = hdfs.get()->exists(path);
     if (exists.isError()) {
       cerr << "Failed to check if file exists: " << exists.error() << endl;
       return EXIT_FAILURE;
     } else if (exists.get() && flags.overwrite) {
-      Try<Nothing> rm = hdfs.rm(path);
+      Try<Nothing> rm = hdfs.get()->rm(path);
       if (rm.isError()) {
         cerr << "Failed to remove existing file: " << rm.error() << endl;
         return EXIT_FAILURE;
@@ -366,7 +400,7 @@ int main(int argc, char** argv)
       return EXIT_FAILURE;
     }
 
-    Try<Nothing> copy = hdfs.copyFromLocal(flags.package.get(), path);
+    Try<Nothing> copy = hdfs.get()->copyFromLocal(flags.package.get(), path);
     if (copy.isError()) {
       cerr << "Failed to copy package: " << copy.error() << endl;
       return EXIT_FAILURE;
@@ -388,7 +422,8 @@ int main(int argc, char** argv)
       environment,
       flags.resources,
       uri,
-      dockerImage);
+      dockerImage,
+      flags.containerizer);
 
   FrameworkInfo framework;
   framework.set_user(user.get());

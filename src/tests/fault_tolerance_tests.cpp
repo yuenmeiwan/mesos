@@ -1,25 +1,23 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-#include <gmock/gmock.h>
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <string>
 #include <vector>
+
+#include <gmock/gmock.h>
 
 #include <mesos/executor.hpp>
 #include <mesos/mesos.hpp>
@@ -46,6 +44,8 @@
 #include "common/protobuf_utils.hpp"
 
 #include "master/master.hpp"
+
+#include "master/allocator/mesos/allocator.hpp"
 
 #include "sched/constants.hpp"
 
@@ -717,7 +717,10 @@ TEST_F(FaultToleranceTest, FrameworkReliableRegistration)
 
 TEST_F(FaultToleranceTest, FrameworkReregister)
 {
-  Try<PID<Master>> master = StartMaster();
+  // NOTE: We do not use `StartMaster()` because we need to access flags later.
+  master::Flags masterFlags = CreateMasterFlags();
+
+  Try<PID<Master>> master = StartMaster(masterFlags);
   ASSERT_SOME(master);
 
   StandaloneMasterDetector slaveDetector(master.get());
@@ -771,6 +774,12 @@ TEST_F(FaultToleranceTest, FrameworkReregister)
   AWAIT_READY(disconnected);
 
   AWAIT_READY(reregistered);
+
+  // Trigger the allocation and therefore resource offer instantly to
+  // avoid blocking the test.
+  Clock::pause();
+  Clock::advance(masterFlags.allocation_interval);
+  Clock::resume();
 
   // The re-registered framework should get offers.
   AWAIT_READY(resourceOffers2);
@@ -1938,7 +1947,7 @@ TEST_F(FaultToleranceTest, UpdateFrameworkInfoOnSchedulerFailover)
   JSON::Array labels = framework.values["labels"].as<JSON::Array>();
 
   EXPECT_EQ(
-      JSON::Value(JSON::Protobuf(createLabel("baz", "qux"))),
+      JSON::Value(JSON::protobuf(createLabel("baz", "qux"))),
       labels.values[0]);
 
   EXPECT_EQ(DRIVER_STOPPED, driver2.stop());

@@ -50,6 +50,20 @@ void Slave::statusUpdate(StatusUpdate update, const UPID& pid)
 ## Comments
 * End each sentence within a comment with a punctuation mark (please note that we generally prefer periods); this applies to incomplete sentences as well.
 * For trailing comments, leave one space.
+* Use backticks when quoting code excerpts or object/variable/function names. For example:
+
+~~~{.cpp}
+// Use `SchedulerDriver::acceptOffers()` to send several offer
+// operations. This makes use of the `RESERVE()` and `UNRESERVE()`
+// helpers, which take a `Resources` object as input and produce
+// appropriate offer operations. Note that we are unreserving the
+// resources contained in `dynamicallyReserved1`.
+driver.acceptOffers({offer.id()},
+    {UNRESERVE(dynamicallyReserved1),
+     RESERVE(dynamicallyReserved2),
+     RESERVE(dynamicallyReserved3)},
+    filters);
+~~~
 
 ## Breaks
 * Break before braces on enum, function, and record (i.e. struct, class, union) definitions.
@@ -107,9 +121,22 @@ Try<Duration> failoverTimeout =
 ~~~
 
 ## Empty Lines
-* 1 blank line at the end of the file.
-* Elements outside classes (classes, structs, global functions, etc.) should be spaced apart by 2 blank lines.
-* Elements inside classes (member variables and functions) should not be spaced apart by more than 1 blank line.
+* One empty line at the end of the file.
+* Inside a code block, every multi-line statement should be followed by one empty line.
+
+~~~{.cpp}
+Try<very_very_long_type> long_name =
+    ::protobuf::parse<very_very_long_type>(
+        request);
+
+for (int i = 0; i < very_very_long_expression();
+     i++) {
+  // No empty line here for control constructs.
+}
+~~~
+
+* Elements outside classes (classes, structs, global functions, etc.) should be spaced apart by two empty lines.
+* Elements inside classes (member variables and functions) should not be spaced apart by more than one empty line.
 
 ## Capture by Reference
 
@@ -194,40 +221,72 @@ s += "world"; // THIS IS A DANGLING REFERENCE!
 
 * Mesos source files must contain the "ASF" header:
 
-        /**
-         * Licensed to the Apache Software Foundation (ASF) under one
-         * or more contributor license agreements.  See the NOTICE file
-         * distributed with this work for additional information
-         * regarding copyright ownership.  The ASF licenses this file
-         * to you under the Apache License, Version 2.0 (the
-         * "License"); you may not use this file except in compliance
-         * with the License.  You may obtain a copy of the License at
-         *
-         *     http://www.apache.org/licenses/LICENSE-2.0
-         *
-         * Unless required by applicable law or agreed to in writing, software
-         * distributed under the License is distributed on an "AS IS" BASIS,
-         * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-         * See the License for the specific language governing permissions and
-         * limitations under the License.
-         */
+         // Licensed to the Apache Software Foundation (ASF) under one
+         // or more contributor license agreements.  See the NOTICE file
+         // distributed with this work for additional information
+         // regarding copyright ownership.  The ASF licenses this file
+         // to you under the Apache License, Version 2.0 (the
+         // "License"); you may not use this file except in compliance
+         // with the License.  You may obtain a copy of the License at
+         //
+         //     http://www.apache.org/licenses/LICENSE-2.0
+         //
+         // Unless required by applicable law or agreed to in writing, software
+         // distributed under the License is distributed on an "AS IS" BASIS,
+         // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+         // See the License for the specific language governing permissions and
+         // limitations under the License.
 
 
 * Stout and libprocess source files must contain the "Apache License Version 2.0" header:
 
-        /**
-         * Licensed under the Apache License, Version 2.0 (the "License");
-         * you may not use this file except in compliance with the License.
-         * You may obtain a copy of the License at
-         *
-         *     http://www.apache.org/licenses/LICENSE-2.0
-         *
-         * Unless required by applicable law or agreed to in writing, software
-         * distributed under the License is distributed on an "AS IS" BASIS,
-         * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-         * See the License for the specific language governing permissions and
-         * limitations under the License
-         */
+         // Licensed under the Apache License, Version 2.0 (the "License");
+         // you may not use this file except in compliance with the License.
+         // You may obtain a copy of the License at
+         //
+         //     http://www.apache.org/licenses/LICENSE-2.0
+         //
+         // Unless required by applicable law or agreed to in writing, software
+         // distributed under the License is distributed on an "AS IS" BASIS,
+         // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+         // See the License for the specific language governing permissions and
+         // limitations under the License
+
+## Order of includes
+
+In addition to the ordering rules from the Google style guide, Mesos related headers are separated into sections. Newline to separate each section.
+Mesos related headers in `include` directories are partitioned by their subfolders, sorted alphabetically, and included using brackets.
+Header in `src` directories are included afterwards, using the same rules but with quotes instead of brackets.
+
+Example for `src/common/foo.cpp`:
+~~~{.cpp}
+#include "common/foo.hpp"
+
+#include <stdint.h>
+
+#include <string>
+#include <vector>
+
+#include <boost/circular_buffer.hpp>
+
+#include <mesos/mesos.hpp>
+#include <mesos/type_utils.hpp>
+
+#include <mesos/module/authenticator.hpp>
+
+#include <mesos/scheduler/scheduler.hpp>
+
+#include <process/http.hpp>
+#include <process/protobuf.hpp>
+
+#include <stout/foreach.hpp>
+#include <stout/hashmap.hpp>
+
+#include "common/build.hpp"
+#include "common/protobuf_utils.hpp"
+
+#include "master/flags.hpp"
+~~~
 
 ## C++11
 

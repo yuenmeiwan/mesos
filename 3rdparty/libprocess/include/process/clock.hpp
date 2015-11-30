@@ -1,16 +1,14 @@
-/**
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License
-*/
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License
 
 #ifndef __PROCESS_CLOCK_HPP__
 #define __PROCESS_CLOCK_HPP__
@@ -48,6 +46,17 @@ public:
   // mean we don't need 'initialize' or 'shutdown'.
   static void initialize(
       lambda::function<void(const std::list<Timer>&)>&& callback);
+
+  /**
+   * Clears all timers without executing them.
+   *
+   * The process manager must be properly finalized before the clock is
+   * finalized.  This will eliminate the need for timers to activate and
+   * prevent further timers from being added after finalization.
+   *
+   * Also, the Clock must not be paused when finalizing.
+   */
+  static void finalize();
 
   /**
    * The current clock time for either the current process that makes

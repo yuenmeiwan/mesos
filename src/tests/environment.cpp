@@ -1,22 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-#include <gtest/gtest.h>
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <sys/wait.h>
 
@@ -27,6 +23,8 @@
 #include <set>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "docker/docker.hpp"
 
@@ -119,6 +117,42 @@ public:
 
     return matches(test, "ROOT_") && user.get() != "root";
   }
+};
+
+
+class CfsFilter : public TestFilter
+{
+public:
+  CfsFilter()
+  {
+#ifdef __linux__
+    Result<string> hierarchy = cgroups::hierarchy("cpu");
+    if (hierarchy.isSome()) {
+      cfsError = os::system(
+          "ls " + path::join(hierarchy.get(), "cpu.cfs_quota_us")) != 0;
+    } else {
+      cfsError = true;
+    }
+
+    if (cfsError) {
+      std::cerr
+        << "-------------------------------------------------------------\n"
+        << "No kernel support for CFS so no 'CFS' tests will be run\n"
+        << "-------------------------------------------------------------"
+        << std::endl;
+    }
+#else
+      cfsError = true;
+#endif // __linux__
+  }
+
+  bool disable(const ::testing::TestInfo* test) const
+  {
+    return matches(test, "CFS_") && cfsError;
+  }
+
+private:
+  bool cfsError;
 };
 
 
@@ -278,6 +312,31 @@ private:
 };
 
 
+class CurlFilter : public TestFilter
+{
+public:
+  CurlFilter()
+  {
+    curlError = os::system("which curl") != 0;
+    if (curlError) {
+      std::cerr
+        << "-------------------------------------------------------------\n"
+        << "No 'curl' command found so no 'curl' tests will be run\n"
+        << "-------------------------------------------------------------"
+        << std::endl;
+    }
+  }
+
+  bool disable(const ::testing::TestInfo* test) const
+  {
+    return matches(test, "CURL_") && curlError;
+  }
+
+private:
+  bool curlError;
+};
+
+
 class BenchmarkFilter : public TestFilter
 {
 public:
@@ -393,12 +452,14 @@ Environment::Environment(const Flags& _flags) : flags(_flags)
   vector<Owned<TestFilter> > filters;
 
   filters.push_back(Owned<TestFilter>(new RootFilter()));
+  filters.push_back(Owned<TestFilter>(new CfsFilter()));
   filters.push_back(Owned<TestFilter>(new CgroupsFilter()));
   filters.push_back(Owned<TestFilter>(new DockerFilter()));
   filters.push_back(Owned<TestFilter>(new BenchmarkFilter()));
   filters.push_back(Owned<TestFilter>(new NetworkIsolatorTestFilter()));
   filters.push_back(Owned<TestFilter>(new PerfFilter()));
   filters.push_back(Owned<TestFilter>(new NetcatFilter()));
+  filters.push_back(Owned<TestFilter>(new CurlFilter()));
 
   // Construct the filter string to handle system or platform specific tests.
   ::testing::UnitTest* unitTest = ::testing::UnitTest::GetInstance();

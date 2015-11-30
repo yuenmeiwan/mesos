@@ -1,16 +1,14 @@
-/**
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License
-*/
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License
 
 #include <time.h>
 
@@ -1450,7 +1448,9 @@ TEST(ProcessTest, Http2)
     http::post(process.self(), "handler", headers, "hello world");
 
   AWAIT_READY(response);
-  ASSERT_EQ(http::statuses[202], response.get().status);
+  ASSERT_EQ(http::Status::ACCEPTED, response->code);
+  ASSERT_EQ(http::Status::string(http::Status::ACCEPTED),
+            response->status);
 
   AWAIT_READY(body);
   ASSERT_EQ("hello world", body.get());
@@ -1783,7 +1783,9 @@ TEST(ProcessTest, PercentEncodedURLs)
   response = http::get(pid, "handler2");
 
   AWAIT_READY(response);
-  EXPECT_EQ(http::statuses[200], response.get().status);
+  EXPECT_EQ(http::Status::OK, response->code);
+  EXPECT_EQ(http::Status::string(http::Status::OK),
+            response->status);
 
   terminate(process);
   wait(process);
@@ -1842,7 +1844,9 @@ TEST(ProcessTest, FirewallDisablePaths)
   Future<http::Response> response = http::get(pid, "handler1");
 
   AWAIT_READY(response);
-  EXPECT_EQ(http::statuses[403], response.get().status);
+  EXPECT_EQ(http::Status::FORBIDDEN, response->code);
+  EXPECT_EQ(http::Status::string(http::Status::FORBIDDEN),
+            response->status);
 
   // Test call to a non disabled endpoint.
   // Substrings should not match.
@@ -1852,13 +1856,17 @@ TEST(ProcessTest, FirewallDisablePaths)
   response = http::get(pid, "handler2");
 
   AWAIT_READY(response);
-  EXPECT_EQ(http::statuses[200], response.get().status);
+  EXPECT_EQ(http::Status::OK, response->code);
+  EXPECT_EQ(http::Status::string(http::Status::OK),
+            response->status);
 
   // Test nested endpoints. Full paths needed for match.
   response = http::get(pid, "handler2/nested");
 
   AWAIT_READY(response);
-  EXPECT_EQ(http::statuses[403], response.get().status);
+  EXPECT_EQ(http::Status::FORBIDDEN, response->code);
+  EXPECT_EQ(http::Status::string(http::Status::FORBIDDEN),
+            response->status);
 
   EXPECT_CALL(process, handler2(_))
     .WillOnce(Return(http::OK()));
@@ -1866,7 +1874,9 @@ TEST(ProcessTest, FirewallDisablePaths)
   response = http::get(pid, "handler2/nested/path");
 
   AWAIT_READY(response);
-  EXPECT_EQ(http::statuses[200], response.get().status);
+  EXPECT_EQ(http::Status::OK, response->code);
+  EXPECT_EQ(http::Status::string(http::Status::OK),
+            response->status);
 
   EXPECT_CALL(process, handler3(_))
     .WillOnce(Return(http::OK()));
@@ -1876,7 +1886,9 @@ TEST(ProcessTest, FirewallDisablePaths)
   response = http::get(pid, "handler3");
 
   AWAIT_READY(response);
-  EXPECT_EQ(http::statuses[200], response.get().status);
+  EXPECT_EQ(http::Status::OK, response->code);
+  EXPECT_EQ(http::Status::string(http::Status::OK),
+            response->status);
 
   EXPECT_CALL(process, handler3(_))
     .WillOnce(Return(http::OK()));
@@ -1884,7 +1896,9 @@ TEST(ProcessTest, FirewallDisablePaths)
   response = http::get(pid, "handler3/nested");
 
   AWAIT_READY(response);
-  EXPECT_EQ(http::statuses[200], response.get().status);
+  EXPECT_EQ(http::Status::OK, response->code);
+  EXPECT_EQ(http::Status::string(http::Status::OK),
+            response->status);
 
   terminate(process);
   wait(process);
@@ -1912,12 +1926,16 @@ TEST(ProcessTest, FirewallUninstall)
   Future<http::Response> response = http::get(pid, "handler1");
 
   AWAIT_READY(response);
-  EXPECT_EQ(http::statuses[403], response.get().status);
+  EXPECT_EQ(http::Status::FORBIDDEN, response->code);
+  EXPECT_EQ(http::Status::string(http::Status::FORBIDDEN),
+            response->status);
 
   response = http::get(pid, "handler2");
 
   AWAIT_READY(response);
-  EXPECT_EQ(http::statuses[403], response.get().status);
+  EXPECT_EQ(http::Status::FORBIDDEN, response->code);
+  EXPECT_EQ(http::Status::string(http::Status::FORBIDDEN),
+            response->status);
 
   process::firewall::install({});
 
@@ -1927,7 +1945,9 @@ TEST(ProcessTest, FirewallUninstall)
   response = http::get(pid, "handler1");
 
   AWAIT_READY(response);
-  EXPECT_EQ(http::statuses[200], response.get().status);
+  EXPECT_EQ(http::Status::OK, response->code);
+  EXPECT_EQ(http::Status::string(http::Status::OK),
+            response->status);
 
   EXPECT_CALL(process, handler2(_))
     .WillOnce(Return(http::OK()));
@@ -1935,7 +1955,9 @@ TEST(ProcessTest, FirewallUninstall)
   response = http::get(pid, "handler2");
 
   AWAIT_READY(response);
-  EXPECT_EQ(http::statuses[200], response.get().status);
+  EXPECT_EQ(http::Status::OK, response->code);
+  EXPECT_EQ(http::Status::string(http::Status::OK),
+            response->status);
 
   terminate(process);
   wait(process);

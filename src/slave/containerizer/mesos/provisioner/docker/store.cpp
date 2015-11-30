@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include "slave/containerizer/mesos/provisioner/docker/store.hpp"
 
@@ -23,6 +21,7 @@
 
 #include <glog/logging.h>
 
+#include <stout/hashmap.hpp>
 #include <stout/json.hpp>
 #include <stout/os.hpp>
 #include <stout/result.hpp>
@@ -75,7 +74,6 @@ private:
   Future<vector<string>> __get(const Image& image);
 
   Future<vector<string>> moveLayers(
-      const std::string& staging,
       const std::list<pair<string, string>>& layerPaths);
 
   Future<Image> storeImage(
@@ -87,6 +85,7 @@ private:
   const Flags flags;
   Owned<MetadataManager> metadataManager;
   Owned<Puller> puller;
+  hashmap<std::string, Owned<Promise<Image>>> pulling;
 };
 
 
@@ -97,21 +96,29 @@ Try<Owned<slave::Store>> Store::create(const Flags& flags)
     return Error("Failed to create Docker puller: " + puller.error());
   }
 
-  if (!os::exists(flags.docker_store_dir)) {
-    Try<Nothing> mkdir = os::mkdir(flags.docker_store_dir);
-    if (mkdir.isError()) {
-      return Error("Failed to create Docker store directory: " + mkdir.error());
-    }
+  Try<Owned<slave::Store>> store = Store::create(flags, puller.get());
+  if (store.isError()) {
+    return Error("Failed to create Docker store: " + store.error());
   }
 
-  if (!os::exists(paths::getStagingDir(flags.docker_store_dir))) {
-    Try<Nothing> mkdir =
-      os::mkdir(paths::getStagingDir(flags.docker_store_dir));
+  return store.get();
+}
 
-    if (mkdir.isError()) {
-      return Error("Failed to create Docker store staging directory: " +
-                   mkdir.error());
-    }
+
+Try<Owned<slave::Store>> Store::create(
+    const Flags& flags,
+    const Owned<Puller>& puller)
+{
+  Try<Nothing> mkdir = os::mkdir(flags.docker_store_dir);
+  if (mkdir.isError()) {
+    return Error("Failed to create Docker store directory: " +
+                 mkdir.error());
+  }
+
+  mkdir = os::mkdir(paths::getStagingDir(flags.docker_store_dir));
+  if (mkdir.isError()) {
+    return Error("Failed to create Docker store staging directory: " +
+                 mkdir.error());
   }
 
   Try<Owned<MetadataManager>> metadataManager = MetadataManager::create(flags);
@@ -120,7 +127,7 @@ Try<Owned<slave::Store>> Store::create(const Flags& flags)
   }
 
   Owned<StoreProcess> process(
-      new StoreProcess(flags, metadataManager.get(), puller.get()));
+      new StoreProcess(flags, metadataManager.get(), puller));
 
   return Owned<slave::Store>(new Store(process));
 }
@@ -180,15 +187,32 @@ Future<Image> StoreProcess::_get(
     return Failure("Failed to create a staging directory");
   }
 
-  return puller->pull(name, staging.get())
-    .then(defer(self(), &Self::moveLayers, staging.get(), lambda::_1))
-    .then(defer(self(), &Self::storeImage, name, lambda::_1))
-    .onAny([staging]() {
-      Try<Nothing> rmdir = os::rmdir(staging.get());
-      if (rmdir.isError()) {
-        LOG(WARNING) << "Failed to remove staging directory: " << rmdir.error();
-      }
-    });
+  const string imageName = stringify(name);
+
+  if (!pulling.contains(imageName)) {
+    Owned<Promise<Image>> promise(new Promise<Image>());
+
+    Future<Image> future = puller->pull(name, Path(staging.get()))
+      .then(defer(self(), &Self::moveLayers, lambda::_1))
+      .then(defer(self(), &Self::storeImage, name, lambda::_1))
+      .onAny(defer(self(), [this, imageName](const Future<Image>&) {
+        pulling.erase(imageName);
+      }))
+      .onAny([staging, imageName]() {
+        Try<Nothing> rmdir = os::rmdir(staging.get());
+        if (rmdir.isError()) {
+          LOG(WARNING) << "Failed to remove staging directory: "
+                       << rmdir.error();
+        }
+      });
+
+    promise->associate(future);
+    pulling[imageName] = promise;
+
+    return promise->future();
+  }
+
+  return pulling[imageName]->future();
 }
 
 
@@ -212,7 +236,6 @@ Future<Nothing> StoreProcess::recover()
 
 
 Future<vector<string>> StoreProcess::moveLayers(
-    const string& staging,
     const list<pair<string, string>>& layerPaths)
 {
   list<Future<Nothing>> futures;
@@ -250,12 +273,10 @@ Future<Nothing> StoreProcess::moveLayer(const pair<string, string>& layerPath)
   const string imageLayerPath =
     paths::getImageLayerPath(flags.docker_store_dir, layerPath.first);
 
-  if (!os::exists(imageLayerPath)) {
-    Try<Nothing> mkdir = os::mkdir(imageLayerPath);
-    if (mkdir.isError()) {
-      return Failure("Failed to create layer path in store for id '" +
-                     layerPath.first + "': " + mkdir.error());
-    }
+  Try<Nothing> mkdir = os::mkdir(imageLayerPath);
+  if (mkdir.isError()) {
+    return Failure("Failed to create layer path in store for id '" +
+                   layerPath.first + "': " + mkdir.error());
   }
 
   Try<Nothing> status = os::rename(

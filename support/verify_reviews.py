@@ -52,17 +52,21 @@ HEAD = shell("git rev-parse HEAD")
 
 
 def api(url, data=None):
-    auth_handler = urllib2.HTTPBasicAuthHandler()
-    auth_handler.add_password(
-        realm="Web API",
-        uri="reviews.apache.org",
-        user=USER,
-        passwd=PASSWORD)
+    try:
+        auth_handler = urllib2.HTTPBasicAuthHandler()
+        auth_handler.add_password(
+            realm="Web API",
+            uri="reviews.apache.org",
+            user=USER,
+            passwd=PASSWORD)
 
-    opener = urllib2.build_opener(auth_handler)
-    urllib2.install_opener(opener)
+        opener = urllib2.build_opener(auth_handler)
+        urllib2.install_opener(opener)
 
-    return json.loads(urllib2.urlopen(url, data=data).read())
+        return json.loads(urllib2.urlopen(url, data=data).read())
+    except urllib2.URLError as e:
+        print "Error handling URL %s: %s" % (url, e.reason)
+        exit(1)
 
 
 def apply_review(review_id):
@@ -115,19 +119,21 @@ def verify_review(review_request):
         applied = []
         apply_reviews(review_request, applied)
 
-        # Make sure build succeeds.
-        shell("./bootstrap")
-        shell("./configure")
+        # Launch docker build script.
 
-	# Make sure tests pass.
-        shell("make -j3 distcheck")
+        # TODO(jojy): Launch docker_build in subprocess so that verifications
+        # can be run parallely for various configurations.
+        configuration = "export OS=ubuntu:14.04;export CONFIGURATION=\"--verbose\";export COMPILER=gcc"
+        command = "%s; ./support/docker_build.sh" % configuration
+
+        shell(command)
 
         # Success!
         post_review(
             review_request,
             "Patch looks great!\n\n" \
             "Reviews applied: %s\n\n" \
-            "All tests passed." % applied)
+            "Passed command: %s" % (applied, command))
     except subprocess.CalledProcessError as e:
         post_review(
             review_request,

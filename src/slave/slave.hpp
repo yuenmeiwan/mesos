@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef __SLAVE_HPP__
 #define __SLAVE_HPP__
@@ -197,17 +195,18 @@ public:
   // NOTE: If 'pid' is a valid UPID an ACK is sent to this pid
   // after the update is successfully handled. If pid == UPID()
   // no ACK is sent. The latter is used by the slave to send
-  // status updates it generated (e.g., TASK_LOST).
+  // status updates it generated (e.g., TASK_LOST). If pid == None()
+  // an ACK is sent to the corresponding HTTP based executor.
   // NOTE: StatusUpdate is passed by value because it is modified
   // to ensure source field is set.
-  void statusUpdate(StatusUpdate update, const process::UPID& pid);
+  void statusUpdate(StatusUpdate update, const Option<process::UPID>& pid);
 
   // Continue handling the status update after optionally updating the
   // container's resources.
   void _statusUpdate(
       const Option<Future<Nothing>>& future,
       const StatusUpdate& update,
-      const UPID& pid,
+      const Option<process::UPID>& pid,
       const ExecutorID& executorId,
       const ContainerID& containerId,
       bool checkpoint);
@@ -218,7 +217,7 @@ public:
   void __statusUpdate(
       const process::Future<Nothing>& future,
       const StatusUpdate& update,
-      const process::UPID& pid);
+      const Option<process::UPID>& pid);
 
   // This is called by status update manager to forward a status
   // update to the master. Note that the latest state of the task is
@@ -312,7 +311,7 @@ public:
   // Returns an ExecutorInfo for a TaskInfo (possibly
   // constructing one if the task has a CommandInfo).
   ExecutorInfo getExecutorInfo(
-      const FrameworkID& frameworkId,
+      const FrameworkInfo& frameworkInfo,
       const TaskInfo& task);
 
   // Shuts down the executor if it did not register yet.
@@ -745,6 +744,7 @@ struct Framework
   Executor* getExecutor(const ExecutorID& executorId);
   Executor* getExecutor(const TaskID& taskId);
   void recoverExecutor(const state::ExecutorState& state);
+  void checkpointFramework() const;
 
   const FrameworkID id() const { return info.id(); }
 

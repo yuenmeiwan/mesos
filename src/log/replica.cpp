@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <stdint.h>
 
@@ -350,27 +348,40 @@ bool ReplicaProcess::updatePromised(uint64_t promised)
   return true;
 }
 
-
-// Note that certain failures that occur result in returning from the
-// current function but *NOT* sending a NACK back to the proposer
-// because that implies a proposer has been demoted. Not sending
-// anything is equivalent to pretending like the request never made it
-// here. TODO(benh): At some point, however, we might want to actually
-// "fail" more dramatically because there could be something rather
-// seriously wrong on this box that we are ignoring (like a bad disk).
-// This could be accomplished by changing most LOG(ERROR) statements
-// to LOG(FATAL), or by counting the number of errors and after
-// reaching some threshold aborting. In addition, sending the error
-// information back to the proposer "might" help the debugging
-// procedure.
+// When handling replicated log protocol requests, we handle errors in
+// three different ways:
+//
+//  1. If we've accepted a conflicting request with a higher proposal
+//     number, we return a REJECT response.
+//  2. If we can't vote on the request because we're in the wrong
+//     state (e.g., not finished the recovery or catchup protocols),
+//     we return an IGNORE response.
+//  3. If we encounter an error (e.g., I/O failure) handling the
+//     request, we log the error and silently ignore the request.
+//
+// TODO(benh): At some point, however, we might want to actually
+// "fail" more dramatically for case three, because there could be
+// something rather seriously wrong on this box that we are ignoring
+// (like a bad disk).  This could be accomplished by changing most
+// LOG(ERROR) statements to LOG(FATAL), or by counting the number of
+// errors and after reaching some threshold aborting. In addition,
+// sending the error information back to the proposer "might" help the
+// debugging procedure.
 
 
 void ReplicaProcess::promise(const UPID& from, const PromiseRequest& request)
 {
-  // Ignore promise requests if this replica is not in VOTING status.
+  // Ignore promise requests if this replica is not in VOTING status;
+  // we also inform the requester, so that they can retry promptly.
   if (status() != Metadata::VOTING) {
     LOG(INFO) << "Replica ignoring promise request from " << from
               << " as it is in " << status() << " status";
+
+    PromiseResponse response;
+    response.set_type(PromiseResponse::IGNORE);
+    response.set_okay(false);
+    response.set_proposal(request.proposal());
+    reply(response);
     return;
   }
 
@@ -402,6 +413,7 @@ void ReplicaProcess::promise(const UPID& from, const PromiseRequest& request)
       action.mutable_nop()->MergeFrom(Action::Nop());
 
       PromiseResponse response;
+      response.set_type(PromiseResponse::ACCEPT);
       response.set_okay(true);
       response.set_proposal(request.proposal());
       response.mutable_action()->MergeFrom(action);
@@ -435,6 +447,7 @@ void ReplicaProcess::promise(const UPID& from, const PromiseRequest& request)
         // number so that the proposer can bump its proposal number
         // and retry if needed to ensure liveness.
         PromiseResponse response;
+        response.set_type(PromiseResponse::REJECT);
         response.set_okay(false);
         response.set_proposal(promised());
         reply(response);
@@ -445,6 +458,7 @@ void ReplicaProcess::promise(const UPID& from, const PromiseRequest& request)
 
         if (persist(action)) {
           PromiseResponse response;
+          response.set_type(PromiseResponse::ACCEPT);
           response.set_okay(true);
           response.set_proposal(request.proposal());
           response.set_position(request.position());
@@ -458,6 +472,7 @@ void ReplicaProcess::promise(const UPID& from, const PromiseRequest& request)
 
       if (request.proposal() <= action.promised()) {
         PromiseResponse response;
+        response.set_type(PromiseResponse::REJECT);
         response.set_okay(false);
         response.set_proposal(action.promised());
         reply(response);
@@ -467,6 +482,7 @@ void ReplicaProcess::promise(const UPID& from, const PromiseRequest& request)
 
         if (persist(action)) {
           PromiseResponse response;
+          response.set_type(PromiseResponse::ACCEPT);
           response.set_okay(true);
           response.set_proposal(request.proposal());
           response.mutable_action()->MergeFrom(original);
@@ -483,6 +499,7 @@ void ReplicaProcess::promise(const UPID& from, const PromiseRequest& request)
       LOG(INFO) << "Replica denying promise request with proposal "
                 << request.proposal();
       PromiseResponse response;
+      response.set_type(PromiseResponse::REJECT);
       response.set_okay(false);
       response.set_proposal(promised());
       reply(response);
@@ -490,6 +507,7 @@ void ReplicaProcess::promise(const UPID& from, const PromiseRequest& request)
       if (updatePromised(request.proposal())) {
         // Return the last position written.
         PromiseResponse response;
+        response.set_type(PromiseResponse::ACCEPT);
         response.set_okay(true);
         response.set_proposal(request.proposal());
         response.set_position(end);
@@ -502,10 +520,18 @@ void ReplicaProcess::promise(const UPID& from, const PromiseRequest& request)
 
 void ReplicaProcess::write(const UPID& from, const WriteRequest& request)
 {
-  // Ignore write requests if this replica is not in VOTING status.
+  // Ignore write requests if this replica is not in VOTING status; we
+  // also inform the requester, so that they can retry promptly.
   if (status() != Metadata::VOTING) {
     LOG(INFO) << "Replica ignoring write request from " << from
               << " as it is in " << status() << " status";
+
+    WriteResponse response;
+    response.set_type(WriteResponse::IGNORE);
+    response.set_okay(false);
+    response.set_proposal(request.proposal());
+    response.set_position(request.position());
+    reply(response);
     return;
   }
 
@@ -520,6 +546,7 @@ void ReplicaProcess::write(const UPID& from, const WriteRequest& request)
   } else if (result.isNone()) {
     if (request.proposal() < promised()) {
       WriteResponse response;
+      response.set_type(WriteResponse::REJECT);
       response.set_okay(false);
       response.set_proposal(promised());
       response.set_position(request.position());
@@ -551,6 +578,7 @@ void ReplicaProcess::write(const UPID& from, const WriteRequest& request)
 
       if (persist(action)) {
         WriteResponse response;
+        response.set_type(WriteResponse::ACCEPT);
         response.set_okay(true);
         response.set_proposal(request.proposal());
         response.set_position(request.position());
@@ -563,6 +591,7 @@ void ReplicaProcess::write(const UPID& from, const WriteRequest& request)
 
     if (request.proposal() < action.promised()) {
       WriteResponse response;
+      response.set_type(WriteResponse::REJECT);
       response.set_okay(false);
       response.set_proposal(action.promised());
       response.set_position(request.position());
@@ -628,6 +657,7 @@ void ReplicaProcess::write(const UPID& from, const WriteRequest& request)
 
         if (persist(action)) {
           WriteResponse response;
+          response.set_type(WriteResponse::ACCEPT);
           response.set_okay(true);
           response.set_proposal(request.proposal());
           response.set_position(request.position());

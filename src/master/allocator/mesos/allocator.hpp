@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef __MASTER_ALLOCATOR_MESOS_ALLOCATOR_HPP__
 #define __MASTER_ALLOCATOR_MESOS_ALLOCATOR_HPP__
@@ -58,6 +56,10 @@ public:
                const hashmap<SlaveID, UnavailableResources>&)>&
         inverseOfferCallback,
       const hashmap<std::string, mesos::master::RoleInfo>& roles);
+
+  void recover(
+      const int expectedAgentCount,
+      const hashmap<std::string, Quota>& quotas);
 
   void addFramework(
       const FrameworkID& frameworkId,
@@ -140,6 +142,13 @@ public:
   void reviveOffers(
       const FrameworkID& frameworkId);
 
+  void setQuota(
+      const std::string& role,
+      const mesos::quota::QuotaInfo& quota);
+
+  void removeQuota(
+      const std::string& role);
+
 private:
   MesosAllocator();
   MesosAllocator(const MesosAllocator&); // Not copyable.
@@ -171,6 +180,10 @@ public:
                const hashmap<SlaveID, UnavailableResources>&)>&
         inverseOfferCallback,
       const hashmap<std::string, mesos::master::RoleInfo>& roles) = 0;
+
+  virtual void recover(
+      const int expectedAgentCount,
+      const hashmap<std::string, Quota>& quotas) = 0;
 
   virtual void addFramework(
       const FrameworkID& frameworkId,
@@ -252,6 +265,13 @@ public:
 
   virtual void reviveOffers(
       const FrameworkID& frameworkId) = 0;
+
+  virtual void setQuota(
+      const std::string& role,
+      const mesos::quota::QuotaInfo& quota) = 0;
+
+  virtual void removeQuota(
+      const std::string& role) = 0;
 };
 
 
@@ -300,6 +320,19 @@ inline void MesosAllocator<AllocatorProcess>::initialize(
       offerCallback,
       inverseOfferCallback,
       roles);
+}
+
+
+template <typename AllocatorProcess>
+inline void MesosAllocator<AllocatorProcess>::recover(
+    const int expectedAgentCount,
+    const hashmap<std::string, Quota>& quotas)
+{
+  process::dispatch(
+      process,
+      &MesosAllocatorProcess::recover,
+      expectedAgentCount,
+      quotas);
 }
 
 
@@ -561,6 +594,30 @@ inline void MesosAllocator<AllocatorProcess>::reviveOffers(
       process,
       &MesosAllocatorProcess::reviveOffers,
       frameworkId);
+}
+
+
+template <typename AllocatorProcess>
+inline void MesosAllocator<AllocatorProcess>::setQuota(
+    const std::string& role,
+    const mesos::quota::QuotaInfo& quota)
+{
+  process::dispatch(
+      process,
+      &MesosAllocatorProcess::setQuota,
+      role,
+      quota);
+}
+
+
+template <typename AllocatorProcess>
+inline void MesosAllocator<AllocatorProcess>::removeQuota(
+    const std::string& role)
+{
+  process::dispatch(
+      process,
+      &MesosAllocatorProcess::removeQuota,
+      role);
 }
 
 } // namespace allocator {

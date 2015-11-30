@@ -12,10 +12,12 @@ layout: documentation
 ## Running Mesos
 
 * [Getting Started](/documentation/latest/getting-started/) for basic instructions on compiling and installing Mesos.
+* [Upgrades](/documentation/latest/upgrades/) for upgrading a Mesos cluster.
 * [Configuration](/documentation/latest/configuration/) for command-line arguments.
 * [Mesos Containerizer](/documentation/latest/containerizer/) default containerizer, supports both Linux and POSIX systems.
 * [Docker Containerizer](/documentation/latest/docker-containerizer/) for launching a Docker image as a Task, or as an Executor.
 * [External Containerizer](/documentation/latest/external-containerizer/) for custom containerization implementations.
+* [Roles](/documentation/latest/roles/)
 * [Framework Authentication](/documentation/latest/authentication/)
 * [Framework Authorization](/documentation/latest/authorization/)
 * [Framework Rate Limiting](/documentation/latest/framework-rate-limiting/)
@@ -36,7 +38,7 @@ layout: documentation
 * [Networking for Mesos-managed Containers](/documentation/latest/networking-for-mesos-managed-containers/)
 * [Oversubscription](/documentation/latest/oversubscription/) for how to configure Mesos to take advantage of unused resources to launch "best-effort" tasks.
 * [Persistent Volume](/documentation/latest/persistent-volume/) for how to allow tasks to access persistent storage resources.
-* [Reservation](/documentation/latest/reservation/) for how to configure Mesos to allow slaves to reserve resources.
+* [Reservation](/documentation/latest/reservation/) for how operators and frameworks can reserve resources for use by a role.
 
 ## Running Mesos Frameworks
 

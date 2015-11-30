@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef __MESOS_MASTER_ALLOCATOR_HPP__
 #define __MESOS_MASTER_ALLOCATOR_HPP__
@@ -26,6 +24,8 @@
 #include <mesos/master/allocator.pb.h>
 
 #include <mesos/maintenance/maintenance.hpp>
+
+#include <mesos/quota/quota.hpp>
 
 #include <mesos/resources.hpp>
 
@@ -99,6 +99,24 @@ public:
                const hashmap<SlaveID, UnavailableResources>&)>&
         inverseOfferCallback,
       const hashmap<std::string, RoleInfo>& roles) = 0;
+
+  /**
+   * Informs the allocator of the recovered state from the master.
+   *
+   *
+   * Because it is hard to define recovery for a running allocator, this
+   * method should be called after `initialize()`, but before actual
+   * allocation starts (i.e. `addSlave()` is called).
+   *
+   * TODO(alexr): Consider extending the signature with expected
+   * frameworks count once it is available upon the master failover.
+   *
+   * @param quotas A (possibly empty) collection of quotas, keyed by
+   *     their role, known to the master.
+   */
+  virtual void recover(
+      const int expectedAgentCount,
+      const hashmap<std::string, Quota>& quotas) = 0;
 
   /**
    * Adds a framework.
@@ -328,6 +346,14 @@ public:
       const Option<Filters>& filters) = 0;
 
   /**
+   * Suppresses offers.
+   *
+   * Informs the allocator to stop sending offers to the framework.
+   */
+  virtual void suppressOffers(
+      const FrameworkID& frameworkId) = 0;
+
+  /**
    * Revives offers.
    *
    * Revives offers for a framework. This is invoked by a framework when
@@ -337,12 +363,43 @@ public:
       const FrameworkID& frameworkId) = 0;
 
   /**
-   * Suppresses offers.
+   * Informs the allocator to set quota for the given role.
    *
-   * Informs the allocator to stop sending offers to the framework.
+   * It is up to the allocator implementation how to satisfy quota. An
+   * implementation may employ different strategies for roles with or
+   * without quota. Hence an empty (or zero) quota is not necessarily the
+   * same as an absence of quota. Logically, this method implies that the
+   * given role should be transitioned to the group of roles with quota
+   * set. An allocator implementation may assert quota for the given role
+   * is not set prior to the call and react accordingly if this assumption
+   * is violated (i.e. fail).
+   *
+   * TODO(alexr): Consider returning a future which an allocator can fail
+   * in order to report failure.
+   *
+   * TODO(alexr): Consider adding an `updateQuota()` method which allows
+   * updating existing quota.
    */
-  virtual void suppressOffers(
-      const FrameworkID& frameworkId) = 0;
+  virtual void setQuota(
+      const std::string& role,
+      const mesos::quota::QuotaInfo& quota) = 0;
+
+  /**
+   * Informs the allocator to remove quota for the given role.
+   *
+   * An allocator implementation may employ different strategies for roles
+   * with or without quota. Hence an empty (or zero) quota is not necessarily
+   * the same as an absence of quota. Logically, this method implies that the
+   * given role should be transitioned to the group of roles without quota
+   * set (absence of quota). An allocator implementation may assert quota
+   * for the given role is set prior to the call and react accordingly if
+   * this assumption is violated (i.e. fail).
+   *
+   * TODO(alexr): Consider returning a future which an allocator can fail in
+   * order to report failure.
+   */
+  virtual void removeQuota(
+      const std::string& role) = 0;
 };
 
 } // namespace allocator {

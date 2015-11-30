@@ -1,26 +1,24 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-#include <gmock/gmock.h>
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include <gmock/gmock.h>
 
 #include <process/future.hpp>
 #include <process/io.hpp>
@@ -56,14 +54,14 @@
 #include "slave/flags.hpp"
 #include "slave/slave.hpp"
 
-#include "slave/containerizer/mesos/isolators/network/port_mapping.hpp"
-
 #include "slave/containerizer/fetcher.hpp"
-#include "slave/containerizer/launcher.hpp"
-#include "slave/containerizer/linux_launcher.hpp"
 
 #include "slave/containerizer/mesos/containerizer.hpp"
 #include "slave/containerizer/mesos/launch.hpp"
+#include "slave/containerizer/mesos/launcher.hpp"
+#include "slave/containerizer/mesos/linux_launcher.hpp"
+
+#include "slave/containerizer/mesos/isolators/network/port_mapping.hpp"
 
 #include "tests/flags.hpp"
 #include "tests/mesos.hpp"
@@ -309,7 +307,7 @@ protected:
     // The flags to pass to the helper process.
     MesosContainerizerLaunch::Flags launchFlags;
 
-    launchFlags.command = JSON::Protobuf(commandInfo);
+    launchFlags.command = JSON::protobuf(commandInfo);
     launchFlags.directory = os::getcwd();
 
     CHECK_SOME(os::user());
@@ -324,7 +322,7 @@ protected:
 
     JSON::Object commands;
     JSON::Array array;
-    array.values.push_back(JSON::Protobuf(preparation.get().commands(0)));
+    array.values.push_back(JSON::protobuf(preparation.get().commands(0)));
     commands.values["commands"] = array;
 
     launchFlags.commands = commands;

@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef __DOCKER_EXECUTOR_HPP__
 #define __DOCKER_EXECUTOR_HPP__
@@ -58,6 +56,12 @@ struct Flags : public mesos::internal::logging::Flags
         "stop_timeout",
         "The duration for docker to wait after stopping a running container\n"
         "before it kills that container.");
+
+    add(&launcher_dir,
+        "launcher_dir",
+        "Directory path of Mesos binaries. Mesos would find health-check,\n"
+        "fetcher, containerizer and executor binary files under this\n"
+        "directory.");
   }
 
   Option<std::string> container;
@@ -66,6 +70,7 @@ struct Flags : public mesos::internal::logging::Flags
   Option<std::string> sandbox_directory;
   Option<std::string> mapped_directory;
   Option<Duration> stop_timeout;
+  Option<std::string> launcher_dir;
 };
 
 } // namespace docker {

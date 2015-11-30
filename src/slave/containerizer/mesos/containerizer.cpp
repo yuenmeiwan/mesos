@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <mesos/module/isolator.hpp>
 
@@ -42,9 +40,10 @@
 
 #include "slave/containerizer/containerizer.hpp"
 #include "slave/containerizer/fetcher.hpp"
-#include "slave/containerizer/launcher.hpp"
+
+#include "slave/containerizer/mesos/launcher.hpp"
 #ifdef __linux__
-#include "slave/containerizer/linux_launcher.hpp"
+#include "slave/containerizer/mesos/linux_launcher.hpp"
 #endif
 
 #include "slave/containerizer/mesos/isolators/posix.hpp"
@@ -302,6 +301,7 @@ Future<bool> MesosContainerizer::launch(
   return dispatch(process.get(),
                   &MesosContainerizerProcess::launch,
                   containerId,
+                  None(),
                   executorInfo,
                   directory,
                   user,
@@ -563,33 +563,6 @@ void MesosContainerizerProcess::___recover(
 }
 
 
-Future<bool> MesosContainerizerProcess::launch(
-    const ContainerID& containerId,
-    const TaskInfo& taskInfo,
-    const ExecutorInfo& executorInfo,
-    const string& directory,
-    const Option<string>& user,
-    const SlaveID& slaveId,
-    const PID<Slave>& slavePid,
-    bool checkpoint)
-{
-  if (taskInfo.has_container()) {
-    // We return false as this containerizer does not support
-    // handling TaskInfo::ContainerInfo.
-    return false;
-  }
-
-  return launch(
-      containerId,
-      executorInfo,
-      directory,
-      user,
-      slaveId,
-      slavePid,
-      checkpoint);
-}
-
-
 // Launching an executor involves the following steps:
 // 1. Call prepare on each isolator.
 // 2. Fork the executor. The forked child is blocked from exec'ing until it has
@@ -601,6 +574,7 @@ Future<bool> MesosContainerizerProcess::launch(
 //    executor.
 Future<bool> MesosContainerizerProcess::launch(
     const ContainerID& containerId,
+    const Option<TaskInfo>& taskInfo,
     const ExecutorInfo& _executorInfo,
     const string& directory,
     const Option<string>& user,
@@ -610,6 +584,12 @@ Future<bool> MesosContainerizerProcess::launch(
 {
   if (containers_.contains(containerId)) {
     return Failure("Container already started");
+  }
+
+  if (taskInfo.isSome() &&
+      taskInfo.get().has_container() &&
+      taskInfo.get().container().type() != ContainerInfo::MESOS) {
+    return false;
   }
 
   // NOTE: We make a copy of the executor info because we may mutate
@@ -795,7 +775,7 @@ Future<bool> MesosContainerizerProcess::_launch(
     // Populate the list of additional commands to be run inside the container
     // context.
     foreach (const CommandInfo& command, prepareInfo.get().commands()) {
-      commandArray.values.push_back(JSON::Protobuf(command));
+      commandArray.values.emplace_back(JSON::protobuf(command));
     }
 
     // Process additional environment variables returned by isolators.
@@ -825,7 +805,7 @@ Future<bool> MesosContainerizerProcess::_launch(
   // Prepare the flags to pass to the launch process.
   MesosContainerizerLaunch::Flags launchFlags;
 
-  launchFlags.command = JSON::Protobuf(executorInfo.command());
+  launchFlags.command = JSON::protobuf(executorInfo.command());
 
   launchFlags.directory = rootfs.isSome() ? flags.sandbox_directory : directory;
   launchFlags.rootfs = rootfs;
@@ -953,7 +933,7 @@ Future<bool> MesosContainerizerProcess::exec(
 
   if (length != sizeof(dummy)) {
     return Failure("Failed to synchronize child process: " +
-                   string(strerror(errno)));
+                   os::strerror(errno));
   }
 
   containers_[containerId]->state = RUNNING;
@@ -1217,7 +1197,7 @@ void MesosContainerizerProcess::____destroy(
     if (!cleanup.isReady()) {
       container->promise.fail(
           "Failed to clean up an isolator when destroying container '" +
-          stringify(containerId) + "' :" +
+          stringify(containerId) + "': " +
           (cleanup.isFailed() ? cleanup.failure() : "discarded future"));
 
       containers_.erase(containerId);

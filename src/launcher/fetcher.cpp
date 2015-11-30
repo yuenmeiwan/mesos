@@ -1,26 +1,22 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <string>
 
-#include <mesos/mesos.hpp>
-
-#include <mesos/fetcher/fetcher.hpp>
+#include <process/owned.hpp>
 
 #include <stout/json.hpp>
 #include <stout/net.hpp>
@@ -29,6 +25,10 @@
 #include <stout/path.hpp>
 #include <stout/protobuf.hpp>
 #include <stout/strings.hpp>
+
+#include <mesos/mesos.hpp>
+
+#include <mesos/fetcher/fetcher.hpp>
 
 #include "hdfs/hdfs.hpp"
 
@@ -39,14 +39,16 @@
 
 #include "slave/containerizer/fetcher.hpp"
 
+using namespace process;
+
 using namespace mesos;
 using namespace mesos::internal;
+
+using std::string;
 
 using mesos::fetcher::FetcherInfo;
 
 using mesos::internal::slave::Fetcher;
-
-using std::string;
 
 
 // Try to extract sourcePath into directory. If sourcePath is
@@ -58,8 +60,9 @@ static Try<bool> extract(
     const string& destinationDirectory)
 {
   string command;
-  // Extract any .tgz, tar.gz, tar.bz2 or zip files.
-  if (strings::endsWith(sourcePath, ".tgz") ||
+  // Extract any .tar, .tgz, tar.gz, tar.bz2 or zip files.
+  if (strings::endsWith(sourcePath, ".tar") ||
+      strings::endsWith(sourcePath, ".tgz") ||
       strings::endsWith(sourcePath, ".tar.gz") ||
       strings::endsWith(sourcePath, ".tbz2") ||
       strings::endsWith(sourcePath, ".tar.bz2") ||
@@ -98,19 +101,15 @@ static Try<string> downloadWithHadoopClient(
     const string& sourceUri,
     const string& destinationPath)
 {
-  HDFS hdfs;
-  Try<bool> available = hdfs.available();
-
-  if (available.isError() || !available.get()) {
-      return Error(
-          "Skipping fetch with Hadoop client: " +
-          (available.isError() ? available.error() : " client not found"));
+  Try<Owned<HDFS>> hdfs = HDFS::create();
+  if (hdfs.isError()) {
+    return Error("Failed to create HDFS client: " + hdfs.error());
   }
 
   LOG(INFO) << "Downloading resource with Hadoop client from '" << sourceUri
             << "' to '" << destinationPath << "'";
 
-  Try<Nothing> result = hdfs.copyToLocal(sourceUri, destinationPath);
+  Try<Nothing> result = hdfs.get()->copyToLocal(sourceUri, destinationPath);
   if (result.isError()) {
     return Error("HDFS copyToLocal failed: " + result.error());
   }
@@ -293,6 +292,9 @@ static Try<string> fetchFromCache(
 
   string destinationPath = path::join(sandboxDirectory, basename.get());
 
+  // Non-empty cache filename is guaranteed by the callers of this function.
+  CHECK(!item.cache_filename().empty());
+
   string sourcePath = path::join(cacheDirectory, item.cache_filename());
 
   if (item.uri().executable()) {
@@ -337,10 +339,10 @@ static Try<string> fetchThroughCache(
     return Error("No cache file name for: " + item.uri().value());
   }
 
-  if (item.action() != FetcherInfo::Item::RETRIEVE_FROM_CACHE) {
-    CHECK_EQ(FetcherInfo::Item::DOWNLOAD_AND_CACHE, item.action())
-      << "Unexpected fetcher action selector";
+  CHECK_NE(FetcherInfo::Item::BYPASS_CACHE, item.action())
+    << "Unexpected fetcher action selector";
 
+  if (item.action() == FetcherInfo::Item::DOWNLOAD_AND_CACHE) {
     LOG(INFO) << "Downloading into cache";
 
     Try<Nothing> mkdir = os::mkdir(cacheDirectory.get());

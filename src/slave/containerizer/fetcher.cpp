@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <unordered_map>
 
@@ -22,6 +20,7 @@
 #include <process/check.hpp>
 #include <process/collect.hpp>
 #include <process/dispatch.hpp>
+#include <process/owned.hpp>
 
 #include <stout/net.hpp>
 #include <stout/path.hpp>
@@ -42,6 +41,7 @@ using std::transform;
 using std::vector;
 
 using process::Future;
+using process::Owned;
 
 namespace mesos {
 namespace internal {
@@ -274,14 +274,12 @@ static Try<Bytes> fetchSize(
     return size.get();
   }
 
-  HDFS hdfs;
-
-  Try<bool> available = hdfs.available();
-  if (available.isError() || !available.get()) {
-    return Error("Hadoop client not available: " + available.error());
+  Try<Owned<HDFS>> hdfs = HDFS::create();
+  if (hdfs.isError()) {
+    return Error("Failed to create HDFS client: " + hdfs.error());
   }
 
-  Try<Bytes> size = hdfs.du(uri);
+  Try<Bytes> size = hdfs.get()->du(uri);
   if (size.isError()) {
     return Error("Hadoop client could not determine size: " + size.error());
   }
@@ -749,7 +747,7 @@ Future<Nothing> FetcherProcess::run(
   // environment variable.
   map<string, string> environment = os::environment();
 
-  environment["MESOS_FETCHER_INFO"] = stringify(JSON::Protobuf(info));
+  environment["MESOS_FETCHER_INFO"] = stringify(JSON::protobuf(info));
 
   if (!flags.hadoop_home.empty()) {
     environment["HADOOP_HOME"] = flags.hadoop_home;

@@ -1,16 +1,15 @@
-/**
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #ifndef __STOUT_OS_HPP__
 #define __STOUT_OS_HPP__
 
@@ -75,12 +74,16 @@
 #include <stout/version.hpp>
 
 #include <stout/os/bootid.hpp>
+#include <stout/os/chdir.hpp>
 #include <stout/os/environment.hpp>
 #include <stout/os/fork.hpp>
+#include <stout/os/getcwd.hpp>
 #include <stout/os/killtree.hpp>
 #include <stout/os/ls.hpp>
-#include <stout/os/permissions.hpp>
+#include <stout/os/mkdir.hpp>
+#include <stout/os/mktemp.hpp>
 #include <stout/os/os.hpp>
+#include <stout/os/permissions.hpp>
 #include <stout/os/read.hpp>
 #include <stout/os/realpath.hpp>
 #include <stout/os/rename.hpp>
@@ -89,6 +92,9 @@
 #include <stout/os/shell.hpp>
 #include <stout/os/signals.hpp>
 #include <stout/os/stat.hpp>
+#include <stout/os/strerror.hpp>
+#include <stout/os/touch.hpp>
+#include <stout/os/utime.hpp>
 #include <stout/os/write.hpp>
 
 
@@ -130,70 +136,6 @@ inline Try<bool> access(const std::string& path, int how)
     }
   }
   return true;
-}
-
-
-// Sets the access and modification times of 'path' to the current time.
-inline Try<Nothing> utime(const std::string& path)
-{
-  if (::utime(path.c_str(), NULL) == -1) {
-    return ErrnoError();
-  }
-
-  return Nothing();
-}
-
-
-// Creates a temporary file using the specified path template. The
-// template may be any path with _6_ `Xs' appended to it, for example
-// /tmp/temp.XXXXXX. The trailing `Xs' are replaced with a unique
-// alphanumeric combination.
-inline Try<std::string> mktemp(const std::string& path = "/tmp/XXXXXX")
-{
-  char* temp = new char[path.size() + 1];
-  int fd = ::mkstemp(::strcpy(temp, path.c_str()));
-
-  if (fd < 0) {
-    delete[] temp;
-    return ErrnoError();
-  }
-
-  // We ignore the return value of close(). This is because users
-  // calling this function are interested in the return value of
-  // mkstemp(). Also an unsuccessful close() doesn't affect the file.
-  os::close(fd);
-
-  std::string result(temp);
-  delete[] temp;
-  return result;
-}
-
-
-inline Try<Nothing> mkdir(const std::string& directory, bool recursive = true)
-{
-  if (!recursive) {
-    if (::mkdir(directory.c_str(), 0755) < 0) {
-      return ErrnoError();
-    }
-  } else {
-    std::vector<std::string> tokens = strings::tokenize(directory, "/");
-    std::string path = "";
-
-    // We got an absolute path, so keep the leading slash.
-    if (directory.find_first_of("/") == 0) {
-      path = "/";
-    }
-
-    foreach (const std::string& token, tokens) {
-      path += token;
-      if (::mkdir(path.c_str(), 0755) < 0 && errno != EEXIST) {
-        return ErrnoError();
-      }
-      path += "/";
-    }
-  }
-
-  return Nothing();
 }
 
 

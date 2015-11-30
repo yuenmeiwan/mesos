@@ -1,16 +1,15 @@
-/**
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #ifndef __STOUT_POSIX_OS_HPP__
 #define __STOUT_POSIX_OS_HPP__
 
@@ -104,26 +103,6 @@ inline void setenv(const std::string& key,
 inline void unsetenv(const std::string& key)
 {
   ::unsetenv(key.c_str());
-}
-
-
-inline Try<Nothing> touch(const std::string& path)
-{
-  if (!exists(path)) {
-    Try<int> fd = open(
-        path,
-        O_RDWR | O_CREAT,
-        S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-
-    if (fd.isError()) {
-      return Error("Failed to open file: " + fd.error());
-    }
-
-    return close(fd.get());
-  }
-
-  // Update the access and modification times.
-  return utime(path);
 }
 
 
@@ -306,16 +285,6 @@ inline Try<Nothing> chmod(const std::string& path, int mode)
 }
 
 
-inline Try<Nothing> chdir(const std::string& directory)
-{
-  if (::chdir(directory.c_str()) < 0) {
-    return ErrnoError();
-  }
-
-  return Nothing();
-}
-
-
 inline Try<Nothing> chroot(const std::string& directory)
 {
   if (::chroot(directory.c_str()) < 0) {
@@ -477,30 +446,6 @@ inline Try<Nothing> su(const std::string& user)
   }
 
   return Nothing();
-}
-
-
-inline std::string getcwd()
-{
-  size_t size = 100;
-
-  while (true) {
-    char* temp = new char[size];
-    if (::getcwd(temp, size) == temp) {
-      std::string result(temp);
-      delete[] temp;
-      return result;
-    } else {
-      if (errno != ERANGE) {
-        delete[] temp;
-        return std::string();
-      }
-      size *= 2;
-      delete[] temp;
-    }
-  }
-
-  return std::string();
 }
 
 

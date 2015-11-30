@@ -43,6 +43,8 @@ PICOJSON = 3rdparty/picojson-$(PICOJSON_VERSION)
 noinst_LTLIBRARIES = libprocess.la
 
 libprocess_la_SOURCES =		\
+  src/authentication_router.hpp	\
+  src/authentication_router.cpp	\
   src/clock.cpp			\
   src/config.hpp		\
   src/decoder.hpp		\
@@ -147,8 +149,8 @@ libprocess_tests_SOURCES =					\
   src/tests/io_tests.cpp					\
   src/tests/limiter_tests.cpp					\
   src/tests/main.cpp						\
-  src/tests/mutex_tests.cpp					\
   src/tests/metrics_tests.cpp					\
+  src/tests/mutex_tests.cpp					\
   src/tests/owned_tests.cpp					\
   src/tests/process_tests.cpp					\
   src/tests/queue_tests.cpp					\

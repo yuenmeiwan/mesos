@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <mesos/slave/isolator.hpp>
 
@@ -65,7 +63,8 @@ StatusUpdate createStatusUpdate(
     const Option<TaskStatus::Reason>& reason,
     const Option<ExecutorID>& executorId,
     const Option<bool>& healthy,
-    const Option<Labels>& labels)
+    const Option<Labels>& labels,
+    const Option<ContainerStatus>& containerStatus)
 {
   StatusUpdate update;
 
@@ -95,15 +94,6 @@ StatusUpdate createStatusUpdate(
   if (uuid.isSome()) {
     update.set_uuid(uuid.get().toBytes());
     status->set_uuid(uuid.get().toBytes());
-  } else {
-    // Note that in 0.22.x, the StatusUpdate.uuid was required
-    // even though the scheduler driver ignores it for master
-    // and scheduler driver generated updates. So we continue
-    // to "set" it here so that updates coming from a 0.23.x
-    // master can be parsed by a 0.22.x scheduler driver.
-    //
-    // TODO(bmahler): In 0.24.x, leave the uuid unset.
-    update.set_uuid("");
   }
 
   if (reason.isSome()) {
@@ -116,6 +106,43 @@ StatusUpdate createStatusUpdate(
 
   if (labels.isSome()) {
     status->mutable_labels()->CopyFrom(labels.get());
+  }
+
+  if (containerStatus.isSome()) {
+    status->mutable_container_status()->CopyFrom(containerStatus.get());
+  }
+
+  return update;
+}
+
+
+StatusUpdate createStatusUpdate(
+    const FrameworkID& frameworkId,
+    const TaskStatus& status,
+    const Option<SlaveID>& slaveId)
+{
+  StatusUpdate update;
+
+  update.mutable_framework_id()->MergeFrom(frameworkId);
+
+  if (status.has_executor_id()) {
+    update.mutable_executor_id()->MergeFrom(status.executor_id());
+  }
+
+  if (slaveId.isSome()) {
+    update.mutable_slave_id()->MergeFrom(slaveId.get());
+  }
+
+  update.mutable_status()->MergeFrom(status);
+
+  if (!status.has_timestamp()) {
+    update.set_timestamp(process::Clock::now().secs());
+  } else {
+    update.set_timestamp(status.timestamp());
+  }
+
+  if (status.has_uuid()) {
+    update.set_uuid(status.uuid());
   }
 
   return update;
@@ -166,6 +193,23 @@ Option<bool> getTaskHealth(const Task& task)
   }
   return healthy;
 }
+
+
+Option<ContainerStatus> getTaskContainerStatus(const Task& task)
+{
+  // The statuses list only keeps the most recent TaskStatus for
+  // each state, and appends later states at the end. Let's find
+  // the most recent TaskStatus with a valid container_status.
+  for (auto status = task.statuses().rbegin();
+       status != task.statuses().rend();
+       ++status) {
+    if (status->has_container_status()) {
+      return status->container_status();
+    }
+  }
+  return None();
+}
+
 
 /**
  * Creates a MasterInfo protobuf from the process's UPID.

@@ -1,28 +1,26 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <unistd.h>
-
-#include <gmock/gmock.h>
 
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include <gmock/gmock.h>
 
 #include <mesos/resources.hpp>
 
@@ -58,13 +56,12 @@
 #endif // __linux__
 #include "slave/containerizer/mesos/isolators/posix.hpp"
 
-#include "slave/containerizer/launcher.hpp"
+#include "slave/containerizer/mesos/launcher.hpp"
 #ifdef __linux__
 #include "slave/containerizer/fetcher.hpp"
-#include "slave/containerizer/linux_launcher.hpp"
-
 #include "slave/containerizer/mesos/containerizer.hpp"
 #include "slave/containerizer/mesos/launch.hpp"
+#include "slave/containerizer/mesos/linux_launcher.hpp"
 #endif // __linux__
 
 #include "tests/flags.hpp"
@@ -100,11 +97,6 @@ using std::ostringstream;
 using std::set;
 using std::string;
 using std::vector;
-
-using testing::_;
-using testing::DoAll;
-using testing::Return;
-using testing::SaveArg;
 
 namespace mesos {
 namespace internal {
@@ -444,7 +436,7 @@ TEST_F(RevocableCpuIsolatorTest, ROOT_CGROUPS_RevocableCpu)
 class LimitedCpuIsolatorTest : public MesosTest {};
 
 
-TEST_F(LimitedCpuIsolatorTest, ROOT_CGROUPS_Cfs)
+TEST_F(LimitedCpuIsolatorTest, ROOT_CGROUPS_CFS_Enable_Cfs)
 {
   slave::Flags flags;
 
@@ -558,7 +550,7 @@ TEST_F(LimitedCpuIsolatorTest, ROOT_CGROUPS_Cfs)
 // observed in MESOS-1049.
 // TODO(vinod): Revisit this if/when the isolator restricts the number
 // of cpus that an executor can use based on the slave cpus.
-TEST_F(LimitedCpuIsolatorTest, ROOT_CGROUPS_Cfs_Big_Quota)
+TEST_F(LimitedCpuIsolatorTest, ROOT_CGROUPS_CFS_Big_Quota)
 {
   slave::Flags flags;
 
@@ -689,14 +681,12 @@ TEST_F(LimitedCpuIsolatorTest, ROOT_CGROUPS_Pids_and_Tids)
   int pipes[2];
   ASSERT_NE(-1, ::pipe(pipes));
 
-  vector<string> argv(3);
-  argv[0] = "sh";
-  argv[1] = "-c";
-  argv[2] = "while true; do sleep 1; done;";
+  vector<string> argv(1);
+  argv[0] = "cat";
 
   Try<pid_t> pid = launcher.get()->fork(
       containerId,
-      "sh",
+      "cat",
       argv,
       Subprocess::FD(STDIN_FILENO),
       Subprocess::FD(STDOUT_FILENO),
@@ -1185,11 +1175,14 @@ const string UNPRIVILEGED_USERNAME = "mesos.test.unprivileged.user";
 
 
 template <typename T>
-class UserCgroupIsolatorTest : public MesosTest
+class UserCgroupIsolatorTest
+  : public ContainerizerTest<slave::MesosContainerizer>
 {
 public:
   static void SetUpTestCase()
   {
+    ContainerizerTest<slave::MesosContainerizer>::SetUpTestCase();
+
     // Remove the user in case it wasn't cleaned up from a previous
     // test.
     os::system("userdel -r " + UNPRIVILEGED_USERNAME + " > /dev/null");
@@ -1200,6 +1193,8 @@ public:
 
   static void TearDownTestCase()
   {
+    ContainerizerTest<slave::MesosContainerizer>::TearDownTestCase();
+
     ASSERT_EQ(0, os::system("userdel -r " + UNPRIVILEGED_USERNAME));
   }
 };
@@ -1217,7 +1212,7 @@ TYPED_TEST_CASE(UserCgroupIsolatorTest, CgroupsIsolatorTypes);
 
 TYPED_TEST(UserCgroupIsolatorTest, ROOT_CGROUPS_UserCgroup)
 {
-  slave::Flags flags;
+  slave::Flags flags = UserCgroupIsolatorTest<TypeParam>::CreateSlaveFlags();
   flags.perf_events = "cpu-cycles"; // Needed for CgroupsPerfEventIsolator.
 
   Try<Isolator*> isolator = TypeParam::create(flags);

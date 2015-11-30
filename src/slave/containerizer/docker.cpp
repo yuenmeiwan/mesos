@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <list>
 #include <map>
@@ -180,6 +178,7 @@ docker::Flags dockerFlags(
   dockerFlags.mapped_directory = flags.sandbox_directory;
   dockerFlags.stop_timeout = flags.docker_stop_timeout;
   dockerFlags.docker_socket = flags.docker_socket;
+  dockerFlags.launcher_dir = flags.launcher_dir;
   return dockerFlags;
 }
 
@@ -222,12 +221,10 @@ DockerContainerizerProcess::Container::create(
       paths::getSlavePath(flags.work_dir, slaveId),
       DOCKER_SYMLINK_DIRECTORY);
 
-  if (!os::exists(dockerSymlinkPath)) {
-    Try<Nothing> mkdir = os::mkdir(dockerSymlinkPath);
-    if (mkdir.isError()) {
-      return Error("Unable to create symlink folder for docker " +
-                   dockerSymlinkPath + ": " + mkdir.error());
-    }
+  Try<Nothing> mkdir = os::mkdir(dockerSymlinkPath);
+  if (mkdir.isError()) {
+    return Error("Unable to create symlink folder for docker " +
+                 dockerSymlinkPath + ": " + mkdir.error());
   }
 
   bool symlinked = false;
@@ -582,15 +579,15 @@ Future<Nothing> DockerContainerizerProcess::_recover(
     foreachvalue (const ExecutorState& executor, framework.executors) {
       if (executor.info.isNone()) {
         LOG(WARNING) << "Skipping recovery of executor '" << executor.id
-                     << "' of framework " << framework.id
-                     << " because its info could not be recovered";
+                     << "' of framework '" << framework.id
+                     << "' because its info could not be recovered";
         continue;
       }
 
       if (executor.latest.isNone()) {
         LOG(WARNING) << "Skipping recovery of executor '" << executor.id
-                     << "' of framework " << framework.id
-                     << " because its latest run could not be recovered";
+                     << "' of framework '" << framework.id
+                     << "' because its latest run could not be recovered";
         continue;
       }
 
@@ -612,8 +609,8 @@ Future<Nothing> DockerContainerizerProcess::_recover(
 
       if (run.get().completed) {
         VLOG(1) << "Skipping recovery of executor '" << executor.id
-                << "' of framework " << framework.id
-                << " because its latest run "
+                << "' of framework '" << framework.id
+                << "' because its latest run "
                 << containerId << " is completed";
         continue;
       }
@@ -622,23 +619,23 @@ Future<Nothing> DockerContainerizerProcess::_recover(
       if (executorInfo.has_container() &&
           executorInfo.container().type() != ContainerInfo::DOCKER) {
         LOG(INFO) << "Skipping recovery of executor '" << executor.id
-                  << "' of framework " << framework.id
-                  << " because it was not launched from docker containerizer";
+                  << "' of framework '" << framework.id
+                  << "' because it was not launched from docker containerizer";
         continue;
       }
 
       if (!executorInfo.has_container() &&
           !existingContainers.contains(containerId)) {
         LOG(INFO) << "Skipping recovery of executor '" << executor.id
-                  << "' of framework " << framework.id
-                  << " because its executor is not marked as docker "
+                  << "' of framework '" << framework.id
+                  << "' because its executor is not marked as docker "
                   << "and the docker container doesn't exist";
         continue;
       }
 
       LOG(INFO) << "Recovering container '" << containerId
                 << "' for executor '" << executor.id
-                << "' of framework " << framework.id;
+                << "' of framework '" << framework.id << "'";
 
       // Create and store a container.
       Container* container = new Container(containerId);
@@ -936,8 +933,8 @@ Future<pid_t> DockerContainerizerProcess::launchExecutorProcess(
          errno == EINTR);
 
   if (length != sizeof(c)) {
-    string error = string(strerror(errno));
-    return Failure("Failed to synchronize with child process: " + error);
+    return Failure("Failed to synchronize with child process: " +
+                   os::strerror(errno));
   }
 
   return s.get().pid();

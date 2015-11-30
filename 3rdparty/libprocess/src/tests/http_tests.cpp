@@ -1,16 +1,14 @@
-/**
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License
-*/
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License
 
 #include <arpa/inet.h>
 
@@ -127,9 +125,11 @@ TEST(HTTPTest, Auth)
   Future<http::Response> noAuthFuture = http::get(http.process->self(), "auth");
 
   AWAIT_READY(noAuthFuture);
-  EXPECT_EQ(http::statuses[401], noAuthFuture.get().status);
+  EXPECT_EQ(http::Status::UNAUTHORIZED, noAuthFuture->code);
+  EXPECT_EQ(http::Status::string(http::Status::UNAUTHORIZED),
+            noAuthFuture->status);
   ASSERT_SOME_EQ("Basic realm=\"testrealm\"",
-                 noAuthFuture.get().headers.get("WWW-authenticate"));
+                 noAuthFuture->headers.get("WWW-authenticate"));
 
   // Now test passing wrong auth header.
   http::Headers headers;
@@ -139,9 +139,12 @@ TEST(HTTPTest, Auth)
     http::get(http.process->self(), "auth", None(), headers);
 
   AWAIT_READY(wrongAuthFuture);
-  EXPECT_EQ(http::statuses[401], wrongAuthFuture.get().status);
+  EXPECT_EQ(http::Status::UNAUTHORIZED, wrongAuthFuture->code);
+  EXPECT_EQ(http::Status::string(http::Status::UNAUTHORIZED),
+            wrongAuthFuture->status);
+
   ASSERT_SOME_EQ("Basic realm=\"testrealm\"",
-                 wrongAuthFuture.get().headers.get("WWW-authenticate"));
+                 wrongAuthFuture->headers.get("WWW-authenticate"));
 
   // Now test passing right auth header.
   headers["Authorization"] = "Basic " + base64::encode("testuser:testpass");
@@ -150,7 +153,9 @@ TEST(HTTPTest, Auth)
     http::get(http.process->self(), "auth", None(), headers);
 
   AWAIT_READY(rightAuthFuture);
-  EXPECT_EQ(http::statuses[200], rightAuthFuture.get().status);
+  EXPECT_EQ(http::Status::OK, rightAuthFuture->code);
+  EXPECT_EQ(http::Status::string(http::Status::OK),
+            rightAuthFuture->status);
 }
 
 
@@ -204,9 +209,11 @@ TEST(HTTPTest, Endpoints)
   EXPECT_TRUE(writer.close());
 
   AWAIT_READY(future);
-  EXPECT_EQ(http::statuses[200], future.get().status);
-  EXPECT_SOME_EQ("chunked", future.get().headers.get("Transfer-Encoding"));
-  EXPECT_EQ("Hello World\n", future.get().body);
+  EXPECT_EQ(http::Status::OK, future->code);
+  EXPECT_EQ(http::Status::string(http::Status::OK), future->status);
+
+  EXPECT_SOME_EQ("chunked", future->headers.get("Transfer-Encoding"));
+  EXPECT_EQ("Hello World\n", future->body);
 }
 
 
@@ -433,7 +440,8 @@ TEST(HTTPTest, Get)
   Future<http::Response> noQueryFuture = http::get(http.process->self(), "get");
 
   AWAIT_READY(noQueryFuture);
-  ASSERT_EQ(http::statuses[200], noQueryFuture.get().status);
+  EXPECT_EQ(http::Status::OK, noQueryFuture->code);
+  EXPECT_EQ(http::Status::string(http::Status::OK), noQueryFuture->status);
 
   EXPECT_CALL(*http.process, get(_))
     .WillOnce(Invoke(validateGetWithQuery));
@@ -442,7 +450,8 @@ TEST(HTTPTest, Get)
     http::get(http.process->self(), "get", "foo=bar");
 
   AWAIT_READY(queryFuture);
-  ASSERT_EQ(http::statuses[200], queryFuture.get().status);
+  ASSERT_EQ(http::Status::OK, queryFuture->code);
+  ASSERT_EQ(http::Status::string(http::Status::OK), queryFuture->status);
 }
 
 
@@ -460,14 +469,16 @@ TEST(HTTPTest, NestedGet)
   Future<http::Response> response = http::get(http.process->self(), "/a/b/c");
 
   AWAIT_READY(response);
-  ASSERT_EQ(http::statuses[200], response.get().status);
+  ASSERT_EQ(http::Status::OK, response->code);
+  ASSERT_EQ(http::Status::string(http::Status::OK), response->status);
 
   // "/a/b" should be handled by "/a" handler and return
   // 'http::Accepted()'.
   response = http::get(http.process->self(), "/a/b");
 
   AWAIT_READY(response);
-  ASSERT_EQ(http::statuses[202], response.get().status);
+  ASSERT_EQ(http::Status::ACCEPTED, response->code);
+  ASSERT_EQ(http::Status::string(http::Status::ACCEPTED), response->status);
 }
 
 
@@ -608,7 +619,8 @@ TEST(HTTPTest, Post)
       "text/plain");
 
   AWAIT_READY(future);
-  ASSERT_EQ(http::statuses[200], future.get().status);
+  ASSERT_EQ(http::Status::OK, future->code);
+  ASSERT_EQ(http::Status::string(http::Status::OK), future->status);
 
   // Now test passing headers instead.
   http::Headers headers;
@@ -621,7 +633,8 @@ TEST(HTTPTest, Post)
     http::post(http.process->self(), "post", headers, "This is the payload.");
 
   AWAIT_READY(future);
-  ASSERT_EQ(http::statuses[200], future.get().status);
+  ASSERT_EQ(http::Status::OK, future->code);
+  ASSERT_EQ(http::Status::string(http::Status::OK), future->status);
 }
 
 
@@ -647,7 +660,8 @@ TEST(HTTPTest, Delete)
     http::requestDelete(http.process->self(), "delete", None());
 
   AWAIT_READY(future);
-  ASSERT_EQ(http::statuses[200], future.get().status);
+  ASSERT_EQ(http::Status::OK, future->code);
+  ASSERT_EQ(http::Status::string(http::Status::OK), future->status);
 }
 
 
@@ -723,15 +737,24 @@ TEST(HTTPConnectionTest, Serial)
 
 TEST(HTTPConnectionTest, Pipeline)
 {
-  Http http;
+  // We use two Processes here to ensure that libprocess performs
+  // pipelining correctly when requests on a single connection
+  // are going to different Processes.
+  Http http1, http2;
 
-  http::URL url = http::URL(
+  http::URL url1 = http::URL(
       "http",
-      http.process->self().address.ip,
-      http.process->self().address.port,
-      http.process->self().id + "/get");
+      http1.process->self().address.ip,
+      http1.process->self().address.port,
+      http1.process->self().id + "/get");
 
-  Future<http::Connection> connect = http::connect(url);
+  http::URL url2 = http::URL(
+      "http",
+      http2.process->self().address.ip,
+      http2.process->self().address.port,
+      http2.process->self().id + "/get");
+
+  Future<http::Connection> connect = http::connect(url1);
   AWAIT_READY(connect);
 
   http::Connection connection = connect.get();
@@ -740,13 +763,15 @@ TEST(HTTPConnectionTest, Pipeline)
   Promise<http::Response> promise1, promise2, promise3;
   Future<http::Request> get1, get2, get3;
 
-  EXPECT_CALL(*http.process, get(_))
+  EXPECT_CALL(*http1.process, get(_))
     .WillOnce(DoAll(FutureArg<0>(&get1),
                     Return(promise1.future())))
-    .WillOnce(DoAll(FutureArg<0>(&get2),
-                    Return(promise2.future())))
     .WillOnce(DoAll(FutureArg<0>(&get3),
                     Return(promise3.future())));
+
+  EXPECT_CALL(*http2.process, get(_))
+    .WillOnce(DoAll(FutureArg<0>(&get2),
+                    Return(promise2.future())));
 
   http::Request request1, request2, request3;
 
@@ -754,9 +779,9 @@ TEST(HTTPConnectionTest, Pipeline)
   request2.method = "GET";
   request3.method = "GET";
 
-  request1.url = url;
-  request2.url = url;
-  request3.url = url;
+  request1.url = url1;
+  request2.url = url2;
+  request3.url = url1;
 
   request1.body = "1";
   request2.body = "2";

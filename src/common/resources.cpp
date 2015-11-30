@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <stdint.h>
 
@@ -30,14 +28,25 @@
 
 #include <stout/foreach.hpp>
 #include <stout/hashmap.hpp>
+#include <stout/json.hpp>
 #include <stout/lambda.hpp>
+#include <stout/protobuf.hpp>
 #include <stout/strings.hpp>
+
+// TODO(bernd-mesos): Remove this interim dependency in the course of
+// solving MESOS-3997.
+#include <master/constants.hpp>
+
 
 using std::map;
 using std::ostream;
 using std::set;
 using std::string;
 using std::vector;
+
+using google::protobuf::RepeatedPtrField;
+
+using mesos::internal::master::MIN_CPUS;
 
 
 namespace mesos {
@@ -85,7 +94,6 @@ bool operator!=(const Resource::DiskInfo& left, const Resource::DiskInfo& right)
 {
   return !(left == right);
 }
-
 
 bool operator==(const Resource& left, const Resource& right)
 {
@@ -254,6 +262,111 @@ static bool contains(const Resource& left, const Resource& right)
   }
 }
 
+
+/**
+ * Checks that a Resources object is valid for command line specification.
+ *
+ * Checks that the given Resources object is appropriate for specification at
+ * the command line. Resources are appropriate if they do not have two resources
+ * with the same name but different types, and do not attempt to specify
+ * persistent volumes, revocable resources, or dynamic reservations.
+ *
+ * @param resources The input Resources.
+ * @return An `Option` containing None() if validation was successful, or an
+ *     Error otherwise.
+ */
+static Option<Error> validateCommandLineResources(const Resources& resources)
+{
+  hashmap<string, Value::Type> nameTypes;
+
+  foreach (const Resource& resource, resources) {
+    // These fields should only be provided programmatically,
+    // not at the command line.
+    if (Resources::isPersistentVolume(resource)) {
+      return Error(
+          "Persistent volumes cannot be specified at the command line");
+    } else if (Resources::isRevocable(resource)) {
+      return Error(
+          "Revocable resources cannot be specified at the command line; do "
+          "not include a 'revocable' key in the resources JSON");
+    } else if (Resources::isDynamicallyReserved(resource)) {
+      return Error(
+          "Dynamic reservations cannot be specified at the command line; "
+          "do not include a 'reservation' key in the resources JSON");
+    }
+
+    if (nameTypes.contains(resource.name()) &&
+        nameTypes[resource.name()] != resource.type()) {
+      return Error(
+          "Resources with the same name ('" + resource.name() + "') but "
+          "different types are not allowed");
+    } else if (!nameTypes.contains(resource.name())) {
+      nameTypes[resource.name()] = resource.type();
+    }
+  }
+
+  return None();
+}
+
+
+/**
+ * Converts a JSON Array to a Resources object.
+ *
+ * Converts a JSON Array to a Resources object. This uses JSON to protobuf
+ * conversion, so the Array should contain JSON Objects, each of which follows
+ * the format of the Resource protobuf message. If no role is specified, the
+ * provided default role will be assigned. `Resources::validate()` is used to
+ * validate the input objects, and empty Resource objects will return an error.
+ *
+ * Example: [{"name":cpus","type":"SCALAR","scalar":{"value":8}}]
+ *
+ * @param resourcesJSON The input JSON Array.
+ * @param defaultRole The default role.
+ * @return A `Try` containing a Resources object if conversion was successful,
+ *     or an Error otherwise.
+ */
+static Try<Resources> convertJSON(
+    const JSON::Array& resourcesJSON,
+    const string& defaultRole)
+{
+  // Convert the JSON Array into a protobuf message and use
+  // that to construct a new Resources object.
+  Try<RepeatedPtrField<Resource>> resourcesProtobuf =
+      protobuf::parse<RepeatedPtrField<Resource>>(resourcesJSON);
+
+  if (resourcesProtobuf.isError()) {
+    return Error(
+        "Some JSON resources were not formatted properly: "
+        + resourcesProtobuf.error());
+  }
+
+  // TODO(greggomann): Refactor this `RepeatedPtrField<Resource>` to `Resources`
+  // conversion if/when there is a factory function for Resources. Use of the
+  // `Resources(RepeatedPtrField<Resource>)` constructor is avoided here because
+  // it doesn't allow us to catch errors that occur during construction.
+  // Note: the related JIRA ticket is MESOS-3852.
+  Resources result;
+
+  foreach (Resource& resource, resourcesProtobuf.get()) {
+    // Set the default role if none was specified.
+    if (!resource.has_role()) {
+      resource.set_role(defaultRole);
+    }
+
+    // Validate the Resource and make sure it isn't empty.
+    Option<Error> error = Resources::validate(resource);
+    if (error.isSome()) {
+      return error.get();
+    } else if (Resources::isEmpty(resource)) {
+      return Error("Some JSON resources were empty: " + stringify(resource));
+    }
+
+    result += resource;
+  }
+
+  return result;
+}
+
 } // namespace internal {
 
 
@@ -305,7 +418,6 @@ Resource operator-(const Resource& left, const Resource& right)
 // Public static functions.
 /////////////////////////////////////////////////
 
-
 Try<Resource> Resources::parse(
     const string& name,
     const string& value,
@@ -350,52 +462,64 @@ Try<Resources> Resources::parse(
     const string& text,
     const string& defaultRole)
 {
-  Resources resources;
-  hashmap<string, Value_Type> nameTypes;
+  Resources result;
 
-  foreach (const string& token, strings::tokenize(text, ";")) {
-    vector<string> pair = strings::tokenize(token, ":");
-    if (pair.size() != 2) {
-      return Error("Bad value for resources, missing or extra ':' in " + token);
+  // Try to parse as a JSON Array.
+  Try<JSON::Array> resourcesJSON = JSON::parse<JSON::Array>(text);
+  if (resourcesJSON.isSome()) {
+    Try<Resources> resources =
+      internal::convertJSON(resourcesJSON.get(), defaultRole);
+    if (resources.isError()) {
+      return resources;
     }
 
-    string name;
-    string role;
-    size_t openParen = pair[0].find("(");
-    if (openParen == string::npos) {
-      name = strings::trim(pair[0]);
-      role = defaultRole;
-    } else {
-      size_t closeParen = pair[0].find(")");
-      if (closeParen == string::npos || closeParen < openParen) {
+    result = resources.get();
+  } else {
+    VLOG(1) << "Parsing resources as JSON failed: " << text << "\n"
+            << "Trying semicolon-delimited string format instead";
+
+    foreach (const string& token, strings::tokenize(text, ";")) {
+      vector<string> pair = strings::tokenize(token, ":");
+      if (pair.size() != 2) {
         return Error(
-            "Bad value for resources, mismatched parentheses in " + token);
+            "Bad value for resources, missing or extra ':' in " + token);
       }
 
-      name = strings::trim(pair[0].substr(0, openParen));
+      string name;
+      string role;
+      size_t openParen = pair[0].find("(");
+      if (openParen == string::npos) {
+        name = strings::trim(pair[0]);
+        role = defaultRole;
+      } else {
+        size_t closeParen = pair[0].find(")");
+        if (closeParen == string::npos || closeParen < openParen) {
+          return Error(
+              "Bad value for resources, mismatched parentheses in " + token);
+        }
 
-      role = strings::trim(pair[0].substr(
-          openParen + 1,
-          closeParen - openParen - 1));
+        name = strings::trim(pair[0].substr(0, openParen));
+
+        role = strings::trim(pair[0].substr(
+            openParen + 1,
+            closeParen - openParen - 1));
+      }
+
+      Try<Resource> resource = Resources::parse(name, pair[1], role);
+      if (resource.isError()) {
+        return Error(resource.error());
+      }
+
+      result += resource.get();
     }
-
-    Try<Resource> resource = Resources::parse(name, pair[1], role);
-    if (resource.isError()) {
-      return Error(resource.error());
-    }
-
-    if (nameTypes.contains(name) && nameTypes[name] != resource.get().type()) {
-      return Error(
-          "Resources with the same name ('" + name + "') but different types "
-          "are not allowed");
-    } else if (!nameTypes.contains(name)) {
-      nameTypes[name] = resource.get().type();
-    }
-
-    resources += resource.get();
   }
 
-  return resources;
+  Option<Error> error = internal::validateCommandLineResources(result);
+  if (error.isSome()) {
+    return error.get();
+  }
+
+  return result;
 }
 
 
@@ -480,8 +604,7 @@ Option<Error> Resources::validate(const Resource& resource)
 }
 
 
-Option<Error> Resources::validate(
-    const google::protobuf::RepeatedPtrField<Resource>& resources)
+Option<Error> Resources::validate(const RepeatedPtrField<Resource>& resources)
 {
   foreach (const Resource& resource, resources) {
     Option<Error> error = validate(resource);
@@ -545,10 +668,10 @@ bool Resources::isRevocable(const Resource& resource)
   return resource.has_revocable();
 }
 
+
 /////////////////////////////////////////////////
 // Public member functions.
 /////////////////////////////////////////////////
-
 
 Resources::Resources(const Resource& resource)
 {
@@ -566,8 +689,7 @@ Resources::Resources(const vector<Resource>& _resources)
 }
 
 
-Resources::Resources(
-    const google::protobuf::RepeatedPtrField<Resource>& _resources)
+Resources::Resources(const RepeatedPtrField<Resource>& _resources)
 {
   foreach (const Resource& resource, _resources) {
     // NOTE: Invalid and zero Resource objects will be ignored.
@@ -677,46 +799,6 @@ Resources Resources::flatten(
 
 // A predicate that returns true for any resource.
 static bool any(const Resource&) { return true; }
-
-
-Option<Resources> Resources::find(const Resource& target) const
-{
-  Resources found;
-  Resources total = *this;
-  Resources remaining = Resources(target).flatten();
-
-  // First look in the target role, then unreserved, then any remaining role.
-  // TODO(mpark): Use a lambda for 'any' instead once we get full C++11.
-  vector<lambda::function<bool(const Resource&)>> predicates = {
-    lambda::bind(isReserved, lambda::_1, target.role()),
-    isUnreserved,
-    any
-  };
-
-  foreach (const auto& predicate, predicates) {
-    foreach (const Resource& resource, total.filter(predicate)) {
-      // Need to flatten to ignore the roles in contains().
-      Resources flattened = Resources(resource).flatten();
-
-      if (flattened.contains(remaining)) {
-        // Done!
-        if (!resource.has_reservation()) {
-          return found + remaining.flatten(resource.role());
-        } else {
-          return found +
-                 remaining.flatten(resource.role(), resource.reservation());
-        }
-      } else if (remaining.contains(flattened)) {
-        found += resource;
-        total -= resource;
-        remaining -= flattened;
-        break;
-      }
-    }
-  }
-
-  return None();
-}
 
 
 Option<Resources> Resources::find(const Resources& targets) const
@@ -862,14 +944,24 @@ Try<Resources> Resources::apply(const Offer::Operation& operation) const
       return Error("Unknown offer operation " + stringify(operation.type()));
   }
 
-  // This is a sanity check to ensure the amount of each type of
+  // The following are sanity checks to ensure the amount of each type of
   // resource does not change.
   // TODO(jieyu): Currently, we only check known resource types like
   // cpus, mem, disk, ports, etc. We should generalize this.
-  CHECK(result.cpus() == cpus() &&
-        result.mem() == mem() &&
+
+  CHECK(result.mem() == mem() &&
         result.disk() == disk() &&
         result.ports() == ports());
+
+  // This comparison is an interim fix - see MESOS-3552. We are making it
+  // reasonably certain that almost equal values are correctly regarded as
+  // equal. Small, usually acceptable, differences occur due to numeric
+  // operations such as unparsing and then parsing a floating point number.
+  // TODO(bernd-mesos): Of course, they might also accumulate, so we need a
+  // better long-term fix. Apply one here when solving MESOS-3997.
+  CHECK_NEAR(result.cpus().isNone() ? 0.0 : result.cpus().get(),
+             cpus().isNone()? 0.0 : cpus().get(),
+             MIN_CPUS);
 
   return result;
 }
@@ -1034,6 +1126,10 @@ Option<Value::Ranges> Resources::ephemeral_ports() const
 }
 
 
+/////////////////////////////////////////////////
+// Private member functions.
+/////////////////////////////////////////////////
+
 bool Resources::_contains(const Resource& that) const
 {
   foreach (const Resource& resource, resources) {
@@ -1046,12 +1142,51 @@ bool Resources::_contains(const Resource& that) const
 }
 
 
+Option<Resources> Resources::find(const Resource& target) const
+{
+  Resources found;
+  Resources total = *this;
+  Resources remaining = Resources(target).flatten();
+
+  // First look in the target role, then unreserved, then any remaining role.
+  // TODO(mpark): Use a lambda for 'any' instead once we get full C++11.
+  vector<lambda::function<bool(const Resource&)>> predicates = {
+    lambda::bind(isReserved, lambda::_1, target.role()),
+    isUnreserved,
+    any
+  };
+
+  foreach (const auto& predicate, predicates) {
+    foreach (const Resource& resource, total.filter(predicate)) {
+      // Need to flatten to ignore the roles in contains().
+      Resources flattened = Resources(resource).flatten();
+
+      if (flattened.contains(remaining)) {
+        // The target has been found, return the result.
+        if (!resource.has_reservation()) {
+          return found + remaining.flatten(resource.role());
+        } else {
+          return found +
+                 remaining.flatten(resource.role(), resource.reservation());
+        }
+      } else if (remaining.contains(flattened)) {
+        found += resource;
+        total -= resource;
+        remaining -= flattened;
+        break;
+      }
+    }
+  }
+
+  return None();
+}
+
+
 /////////////////////////////////////////////////
 // Overloaded operators.
 /////////////////////////////////////////////////
 
-
-Resources::operator const google::protobuf::RepeatedPtrField<Resource>&() const
+Resources::operator const RepeatedPtrField<Resource>&() const
 {
   return resources;
 }

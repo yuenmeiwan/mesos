@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -43,6 +41,28 @@ namespace mesos {
 namespace internal {
 namespace log {
 
+static bool isRejectedPromise(const PromiseResponse& response) {
+  if (response.has_type()) {
+    // New format (Mesos >= 0.26).
+    return response.type() ==  PromiseResponse::REJECT;
+  } else {
+    // Old format (Mesos < 0.26).
+    return !response.okay();
+  }
+}
+
+
+static bool isRejectedWrite(const WriteResponse& response) {
+  if (response.has_type()) {
+    // New format (Mesos >= 0.26).
+    return response.type() == WriteResponse::REJECT;
+  } else {
+    // Old format (Mesos < 0.26).
+    return !response.okay();
+  }
+}
+
+
 class ExplicitPromiseProcess : public Process<ExplicitPromiseProcess>
 {
 public:
@@ -56,7 +76,8 @@ public:
       network(_network),
       proposal(_proposal),
       position(_position),
-      responsesReceived(0) {}
+      responsesReceived(0),
+      ignoresReceived(0) {}
 
   virtual ~ExplicitPromiseProcess() {}
 
@@ -127,9 +148,29 @@ private:
 
   void received(const PromiseResponse& response)
   {
+    if (response.has_type() && response.type() == PromiseResponse::IGNORE) {
+      ignoresReceived++;
+
+      // A quorum of replicas have ignored the request.
+      if (ignoresReceived >= quorum) {
+        LOG(INFO) << "Aborting explicit promise request because "
+                  << ignoresReceived << " ignores received";
+
+        // If the "type" is PromiseResponse::IGNORE, the rest of the
+        // fields don't matter.
+        PromiseResponse result;
+        result.set_type(PromiseResponse::IGNORE);
+
+        promise.set(result);
+        terminate(self());
+      }
+
+      return;
+    }
+
     responsesReceived++;
 
-    if (!response.okay()) {
+    if (isRejectedPromise(response)) {
       // Failed to get the promise from a replica for this position
       // because it has been promised to a proposer with a higher
       // proposal number. The 'proposal' field in the response
@@ -196,9 +237,11 @@ private:
       PromiseResponse result;
 
       if (highestNackProposal.isSome()) {
+        result.set_type(PromiseResponse::REJECT);
         result.set_okay(false);
         result.set_proposal(highestNackProposal.get());
       } else {
+        result.set_type(PromiseResponse::ACCEPT);
         result.set_okay(true);
         if (highestAckAction.isSome()) {
           result.mutable_action()->CopyFrom(highestAckAction.get());
@@ -218,6 +261,7 @@ private:
   PromiseRequest request;
   set<Future<PromiseResponse> > responses;
   size_t responsesReceived;
+  size_t ignoresReceived;
   Option<uint64_t> highestNackProposal;
   Option<Action> highestAckAction;
 
@@ -236,7 +280,8 @@ public:
       quorum(_quorum),
       network(_network),
       proposal(_proposal),
-      responsesReceived(0) {}
+      responsesReceived(0),
+      ignoresReceived(0) {}
 
   virtual ~ImplicitPromiseProcess() {}
 
@@ -306,9 +351,29 @@ private:
 
   void received(const PromiseResponse& response)
   {
+    if (response.has_type() && response.type() == PromiseResponse::IGNORE) {
+      ignoresReceived++;
+
+      // A quorum of replicas have ignored the request.
+      if (ignoresReceived >= quorum) {
+        LOG(INFO) << "Aborting implicit promise request because "
+                  << ignoresReceived << " ignores received";
+
+        // If the "type" is PromiseResponse::IGNORE, the rest of the
+        // fields don't matter.
+        PromiseResponse result;
+        result.set_type(PromiseResponse::IGNORE);
+
+        promise.set(result);
+        terminate(self());
+      }
+
+      return;
+    }
+
     responsesReceived++;
 
-    if (!response.okay()) {
+    if (isRejectedPromise(response)) {
       // Failed to get the promise from a replica because it has
       // promised a proposer with a higher proposal number. The
       // 'proposal' field in the response specifies the proposal
@@ -335,11 +400,13 @@ private:
       PromiseResponse result;
 
       if (highestNackProposal.isSome()) {
+        result.set_type(PromiseResponse::REJECT);
         result.set_okay(false);
         result.set_proposal(highestNackProposal.get());
       } else {
         CHECK_SOME(highestEndPosition);
 
+        result.set_type(PromiseResponse::ACCEPT);
         result.set_okay(true);
         result.set_position(highestEndPosition.get());
       }
@@ -356,6 +423,7 @@ private:
   PromiseRequest request;
   set<Future<PromiseResponse> > responses;
   size_t responsesReceived;
+  size_t ignoresReceived;
   Option<uint64_t> highestNackProposal;
   Option<uint64_t> highestEndPosition;
 
@@ -376,7 +444,8 @@ public:
       network(_network),
       proposal(_proposal),
       action(_action),
-      responsesReceived(0) {}
+      responsesReceived(0),
+      ignoresReceived(0) {}
 
   virtual ~WriteProcess() {}
 
@@ -466,9 +535,28 @@ private:
   {
     CHECK_EQ(response.position(), request.position());
 
+    if (response.has_type() && response.type() == WriteResponse::IGNORE) {
+      ignoresReceived++;
+
+      if (ignoresReceived >= quorum) {
+        LOG(INFO) << "Aborting write request because "
+                  << ignoresReceived << " ignores received";
+
+        // If the "type" is WriteResponse::IGNORE, the rest of the
+        // fields don't matter.
+        WriteResponse result;
+        result.set_type(WriteResponse::IGNORE);
+
+        promise.set(result);
+        terminate(self());
+      }
+
+      return;
+    }
+
     responsesReceived++;
 
-    if (!response.okay()) {
+    if (isRejectedWrite(response)) {
       // A replica rejects the write request because this position has
       // been promised to a proposer with a higher proposal number.
       // The 'proposal' field in the response specifies the proposal
@@ -485,9 +573,11 @@ private:
       WriteResponse result;
 
       if (highestNackProposal.isSome()) {
+        result.set_type(WriteResponse::REJECT);
         result.set_okay(false);
         result.set_proposal(highestNackProposal.get());
       } else {
+        result.set_type(WriteResponse::ACCEPT);
         result.set_okay(true);
       }
 
@@ -504,6 +594,7 @@ private:
   WriteRequest request;
   set<Future<WriteResponse> > responses;
   size_t responsesReceived;
+  size_t ignoresReceived;
   Option<uint64_t> highestNackProposal;
 
   process::Promise<WriteResponse> promise;

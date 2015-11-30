@@ -1,16 +1,15 @@
-/**
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #ifndef __STOUT_OS_POSIX_FORK_HPP__
 #define __STOUT_OS_POSIX_FORK_HPP__
 
@@ -31,6 +30,7 @@
 #include <stout/error.hpp>
 #include <stout/exit.hpp>
 #include <stout/foreach.hpp>
+#include <stout/os/strerror.hpp>
 #include <stout/stringify.hpp>
 #include <stout/try.hpp>
 
@@ -262,11 +262,11 @@ private:
     void operator()(Tree::Memory* process) const
     {
       if (munmap(process, sizeof(Tree::Memory)) == -1) {
-        ABORT(std::string("Failed to unmap memory: ") + strerror(errno));
+        ABORT(std::string("Failed to unmap memory: ") + os::strerror(errno));
       }
       if (::close(fd) == -1) {
         ABORT(std::string("Failed to close shared memory file descriptor: ") +
-              strerror(errno));
+              os::strerror(errno));
       }
     }
 
@@ -366,7 +366,8 @@ private:
       // Execute the command (via '/bin/sh -c command').
       const char* command = exec.get().command.c_str();
       execlp("sh", "sh", "-c", command, (char*) NULL);
-      EXIT(1) << "Failed to execute '" << command << "': " << strerror(errno);
+      EXIT(1) << "Failed to execute '" << command
+              << "': " << os::strerror(errno);
     } else if (wait.isSome()) {
       foreach (pid_t pid, pids) {
         // TODO(benh): Check for signal interruption or other errors.

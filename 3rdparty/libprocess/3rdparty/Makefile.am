@@ -159,7 +159,6 @@ stout_tests_SOURCES =				\
   $(STOUT)/tests/bits_tests.cpp			\
   $(STOUT)/tests/bytes_tests.cpp		\
   $(STOUT)/tests/cache_tests.cpp		\
-  $(STOUT)/tests/svn_tests.cpp			\
   $(STOUT)/tests/duration_tests.cpp		\
   $(STOUT)/tests/dynamiclibrary_tests.cpp	\
   $(STOUT)/tests/error_tests.cpp		\
@@ -177,6 +176,9 @@ stout_tests_SOURCES =				\
   $(STOUT)/tests/none_tests.cpp			\
   $(STOUT)/tests/option_tests.cpp		\
   $(STOUT)/tests/os_tests.cpp			\
+  $(STOUT)/tests/os/sendfile_tests.cpp		\
+  $(STOUT)/tests/os/signals_tests.cpp		\
+  $(STOUT)/tests/os/strerror_tests.cpp		\
   $(STOUT)/tests/path_tests.cpp			\
   $(STOUT)/tests/protobuf_tests.cpp		\
   $(STOUT)/tests/protobuf_tests.pb.cc		\
@@ -184,12 +186,11 @@ stout_tests_SOURCES =				\
   $(STOUT)/tests/protobuf_tests.proto		\
   $(STOUT)/tests/recordio_tests.cpp		\
   $(STOUT)/tests/result_tests.cpp		\
-  $(STOUT)/tests/os/sendfile_tests.cpp		\
-  $(STOUT)/tests/os/signals_tests.cpp		\
   $(STOUT)/tests/set_tests.cpp			\
   $(STOUT)/tests/some_tests.cpp			\
   $(STOUT)/tests/strings_tests.cpp		\
   $(STOUT)/tests/subcommand_tests.cpp		\
+  $(STOUT)/tests/svn_tests.cpp			\
   $(STOUT)/tests/try_tests.cpp			\
   $(STOUT)/tests/uuid_tests.cpp			\
   $(STOUT)/tests/version_tests.cpp

@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef __MASTER_HPP__
 #define __MASTER_HPP__
@@ -37,6 +35,8 @@
 #include <mesos/master/allocator.hpp>
 
 #include <mesos/module/authenticator.hpp>
+
+#include <mesos/quota/quota.hpp>
 
 #include <mesos/scheduler/scheduler.hpp>
 
@@ -111,7 +111,7 @@ struct Slave
   Slave(const SlaveInfo& _info,
         const process::UPID& _pid,
         const MachineID& _machineId,
-        const Option<std::string> _version,
+        const std::string& _version,
         const process::Time& _registeredTime,
         const Resources& _checkpointedResources,
         const std::vector<ExecutorInfo> executorInfos =
@@ -303,10 +303,8 @@ struct Slave
 
   process::UPID pid;
 
-  // The Mesos version of the slave. If set, the slave is >= 0.21.0.
   // TODO(bmahler): Use stout's Version when it can parse labels, etc.
-  // TODO(bmahler): Make this required once it is always set.
-  const Option<std::string> version;
+  const std::string version;
 
   process::Time registeredTime;
   Option<process::Time> reregisteredTime;
@@ -468,7 +466,7 @@ public:
       const SlaveID& slaveId);
 
   void statusUpdate(
-      const StatusUpdate& update,
+      StatusUpdate update,
       const process::UPID& pid);
 
   void reconcileTasks(
@@ -836,12 +834,92 @@ private:
     return leader.isSome() && leader.get() == info_;
   }
 
+  /**
+   * Inner class used to namespace the handling of quota requests.
+   *
+   * It operates inside the Master actor. It is responsible for validating
+   * and persisting quota requests, and exposing quota status.
+   * @see master/quota_handler.cpp for implementations.
+   */
+  class QuotaHandler
+  {
+  public:
+    explicit QuotaHandler(Master* _master) : master(_master)
+    {
+      CHECK_NOTNULL(master);
+    }
+
+    process::Future<process::http::Response> status(
+        const process::http::Request& request) const
+    {
+      // TODO(joerg84): For now this is just a stub. It will be filled as
+      // part of MESOS-1791.
+      return process::http::NotImplemented();
+    }
+
+    process::Future<process::http::Response> set(
+        const process::http::Request& request) const;
+
+    process::Future<process::http::Response> remove(
+        const process::http::Request& request) const;
+
+  private:
+    // Heuristically tries to determine whether a quota request could
+    // reasonably be satisfied given the current cluster capacity. The
+    // goal is to determine whether a user may accidentally request an
+    // amount of resources that would prevent frameworks without quota
+    // from getting any offers. A force flag will allow users to bypass
+    // this check.
+    //
+    // The heuristic tests whether the total quota, including the new
+    // request, does not exceed the sum of non-static cluster resources,
+    // i.e. the following inequality holds:
+    //   total - statically reserved >= total quota + quota request
+    //
+    // Please be advised that:
+    //   * It is up to an allocator how to satisfy quota (for example,
+    //     what resources to account towards quota, as well as which
+    //     resources to consider allocatable for quota).
+    //   * Even if there are enough resources at the moment of this check,
+    //     agents may terminate at any time, rendering the cluster under
+    //     quota.
+    Option<Error> capacityHeuristic(
+        const mesos::quota::QuotaInfo& request) const;
+
+    // We always want to rescind offers after the capacity heuristic. The
+    // reason for this is the race between the allocator and the master:
+    // it can happen that there are not enough free resources at the
+    // allocator's disposal when it is notified about the quota request,
+    // but at this point it's too late to rescind.
+    //
+    // While rescinding, we adhere to the following rules:
+    //   * Rescind at least as many resources as there are in the quota request.
+    //   * Rescind all offers from an agent in order to make the potential
+    //     offer bigger, which increases the chances that a quota'ed framework
+    //     will be able to use the offer.
+    //   * Rescind offers from at least `numF` agents to make it possible
+    //     (but not guaranteed, due to fair sharing) that each framework in
+    //     the role for which quota is set gets an offer (`numF` is the
+    //     number of frameworks in the quota'ed role). Though this is not
+    //     strictly necessary, we think this will increase the debugability
+    //     and will improve user experience.
+    //
+    // TODO(alexr): Consider removing this function once offer management
+    // (including rescinding) is moved to allocator.
+    void rescindOffers(const mesos::quota::QuotaInfo& request) const;
+
+    // To perform actions related to quota management, we require access to the
+    // master data structures. No synchronization primitives are needed here
+    // since `QuotaHandler`'s functions are invoked in the Master's actor.
+    Master* master;
+  };
+
   // Inner class used to namespace HTTP route handlers (see
   // master/http.cpp for implementations).
   class Http
   {
   public:
-    explicit Http(Master* _master) : master(_master) {}
+    explicit Http(Master* _master) : master(_master), quotaHandler(_master) {}
 
     // Logs the request, route handlers can compose this with the
     // desired request handler to get consistent request logging.
@@ -851,8 +929,20 @@ private:
     process::Future<process::http::Response> scheduler(
         const process::http::Request& request) const;
 
+    // /master/create-volumes
+    process::Future<process::http::Response> createVolumes(
+        const process::http::Request& request) const;
+
+    // /master/destroy-volumes
+    process::Future<process::http::Response> destroyVolumes(
+        const process::http::Request& request) const;
+
     // /master/flags
     process::Future<process::http::Response> flags(
+        const process::http::Request& request) const;
+
+    // /master/frameworks
+    process::Future<process::http::Response> frameworks(
         const process::http::Request& request) const;
 
     // /master/health
@@ -915,8 +1005,13 @@ private:
     process::Future<process::http::Response> unreserve(
         const process::http::Request& request) const;
 
+    // /master/quota
+    process::Future<process::http::Response> quota(
+        const process::http::Request& request) const;
+
     static std::string SCHEDULER_HELP();
     static std::string FLAGS_HELP();
+    static std::string FRAMEWORKS();
     static std::string HEALTH_HELP();
     static std::string OBSERVE_HELP();
     static std::string REDIRECT_HELP();
@@ -930,8 +1025,11 @@ private:
     static std::string MAINTENANCE_STATUS_HELP();
     static std::string MACHINE_DOWN_HELP();
     static std::string MACHINE_UP_HELP();
+    static std::string CREATE_VOLUMES_HELP();
+    static std::string DESTROY_VOLUMES_HELP();
     static std::string RESERVE_HELP();
     static std::string UNRESERVE_HELP();
+    static std::string QUOTA_HELP();
 
   private:
     // Helper for doing authentication, returns the credential used if
@@ -946,16 +1044,17 @@ private:
         bool authorized = true) const;
 
     /**
-     * Continuation for operations: /reserve, /unreserve, /create and
-     * /destroy. First tries to recover 'remaining' amount of
-     * resources by rescinding outstanding offers, then tries to apply
-     * the operation by calling 'master->apply' and propagates the
-     * 'Future<Nothing>' as 'Future<Response>' where 'Nothing' -> 'OK'
-     * and Failed -> 'Conflict'.
+     * Continuation for operations: /reserve, /unreserve,
+     * /create-volumes and /destroy-volumes. First tries to recover
+     * 'required' amount of resources by rescinding outstanding
+     * offers, then tries to apply the operation by calling
+     * 'master->apply' and propagates the 'Future<Nothing>' as
+     * 'Future<Response>' where 'Nothing' -> 'OK' and Failed ->
+     * 'Conflict'.
      *
      * @param slaveId The ID of the slave that the operation is
      *     updating.
-     * @param remaining The resources needed to satisfy the operation.
+     * @param required The resources needed to satisfy the operation.
      *     This is used for an optimization where we try to only
      *     rescind offers that would contribute to satisfying the
      *     operation.
@@ -965,10 +1064,14 @@ private:
      */
     process::Future<process::http::Response> _operation(
         const SlaveID& slaveId,
-        Resources remaining,
+        Resources required,
         const Offer::Operation& operation) const;
 
     Master* master;
+
+    // NOTE: The quota specific pieces of the Operator API are factored
+    // out into this separate class.
+    QuotaHandler quotaHandler;
   };
 
   Master(const Master&);              // No copying.
@@ -1173,6 +1276,9 @@ private:
   hashmap<OfferID, process::Timer> inverseOfferTimers;
 
   hashmap<std::string, Role*> roles;
+
+  // We store quotas by role because we set them at the role level.
+  hashmap<std::string, Quota> quotas;
 
   // Authenticator names as supplied via flags.
   std::vector<std::string> authenticatorNames;
@@ -1908,6 +2014,13 @@ struct Role
   }
 
   mesos::master::RoleInfo info;
+
+  // NOTE: The dynamic role/quota relation is stored in and administrated
+  // by the master. There is no direct representation of quota information
+  // here to avoid duplication and to support that an operator can associate
+  // quota with a role before the role is created. Such ordering of operator
+  // requests prevents a race of premature unbounded allocation that setting
+  // quota first is intended to contain.
 
   hashmap<FrameworkID, Framework*> frameworks;
 };

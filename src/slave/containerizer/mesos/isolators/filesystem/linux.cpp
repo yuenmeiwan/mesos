@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <list>
 #include <sstream>
@@ -34,11 +32,14 @@
 #include <stout/strings.hpp>
 
 #include <stout/os/shell.hpp>
+#include <stout/os/strerror.hpp>
 
 #include "linux/fs.hpp"
 #include "linux/ns.hpp"
 
 #include "slave/paths.hpp"
+
+#include "slave/containerizer/mesos/mount.hpp"
 
 #include "slave/containerizer/mesos/isolators/filesystem/linux.hpp"
 
@@ -462,7 +463,14 @@ Try<string> LinuxFilesystemIsolatorProcess::script(
 
   // Make sure mounts in the container mount namespace do not
   // propagate back to the host mount namespace.
-  out << "mount --make-rslave /\n";
+  // NOTE: We cannot simply run `mount --make-rslave /`, for more info
+  // please refer to comments in mount.hpp.
+  MesosContainerizerMount::Flags mountFlags;
+  mountFlags.operation = MesosContainerizerMount::MAKE_RSLAVE;
+  mountFlags.path = "/";
+  out << path::join(flags.launcher_dir, "mesos-containerizer") << " "
+      << MesosContainerizerMount::NAME << " "
+      << stringify(mountFlags) << "\n";
 
   // Try to unmount work directory mounts and persistent volume mounts
   // for other containers to release the extra references to them.
@@ -705,9 +713,8 @@ Future<Nothing> LinuxFilesystemIsolatorProcess::update(
     // user/group of the persistent volumes.
     struct stat s;
     if (::stat(info->directory.c_str(), &s) < 0) {
-      return Failure(
-          "Failed to get ownership for '" + info->directory +
-          "': " + strerror(errno));
+      return Failure("Failed to get ownership for '" + info->directory + "': " +
+                     os::strerror(errno));
     }
 
     LOG(INFO) << "Changing the ownership of the persistent volume at '"

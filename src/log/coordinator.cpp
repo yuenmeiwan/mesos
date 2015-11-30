@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <stdint.h>
 
@@ -194,15 +192,24 @@ Future<PromiseResponse> CoordinatorProcess::runPromisePhase()
 Future<Option<uint64_t> > CoordinatorProcess::checkPromisePhase(
     const PromiseResponse& response)
 {
-  if (!response.okay()) {
+  CHECK(response.has_type());
+
+  switch (response.type()) {
+  case PromiseResponse::IGNORE:
+    // A quorum of replicas ignored the request, but it can be
+    // retried.
+    return None();
+
+  case PromiseResponse::REJECT:
     // Lost an election, but can be retried. We save the proposal
     // number here so that most likely we will have a high enough
     // proposal number when we retry.
     CHECK_LE(proposal, response.proposal());
     proposal = response.proposal();
-
     return None();
-  } else {
+
+  default:
+    CHECK(response.type() == PromiseResponse::ACCEPT);
     CHECK(response.has_position());
     index = response.position();
 

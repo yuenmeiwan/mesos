@@ -1,16 +1,15 @@
-/**
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #ifndef __STOUT_WINDOWS_HPP__
 #define __STOUT_WINDOWS_HPP__
 
@@ -81,63 +80,6 @@ typedef SSIZE_T ssize_t;
 // the Windows versions of these flags to their POSIX equivalents so we don't
 // have to change any socket code.
 constexpr int SHUT_RD = SD_RECEIVE;
-
-// File I/O function aliases.
-//
-// NOTE: The use of `auto` and the trailing return type in the following
-// functions are meant to make it easier for Linux developers to use and
-// maintain the code. It is an explicit marker that we are using the compiler
-// to guarantee that the return type is identical to whatever is in the Windows
-// implementation of the standard.
-inline auto write(int fd, const void* buffer, size_t count) ->
-decltype(_write(fd, buffer, count))
-{
-  return _write(fd, buffer, count);
-}
-
-
-inline auto open(const char* path, int flags) ->
-decltype(_open(path, flags))
-{
-  return _open(path, flags);
-}
-
-
-inline auto close(int fd) ->
-decltype(_close(fd))
-{
-  return _close(fd);
-}
-
-
-// Filesystem function aliases.
-inline auto mkdir(const char* path, mode_t mode) ->
-decltype(_mkdir(path))
-{
-  return _mkdir(path);
-}
-
-
-inline auto mkstemp(char* path) ->
-decltype(_mktemp_s(path, strlen(path) + 1))
-{
-  return _mktemp_s(path, strlen(path) + 1);
-}
-
-
-
-inline auto realpath(const char* path, char* resolved) ->
-decltype(_fullpath(resolved, path, PATH_MAX))
-{
-  return _fullpath(resolved, path, PATH_MAX);
-}
-
-
-inline auto access(const char* fileName, int accessMode) ->
-decltype(_access(fileName, accessMode))
-{
-  return _access(fileName, accessMode);
-}
 
 
 // Permissions API. (cf. MESOS-3176 to track ongoing permissions work.)
@@ -230,6 +172,94 @@ const mode_t S_IRWXO = S_IROTH | S_IWOTH | S_IXOTH;
 const mode_t S_ISUID = 0x08000000;        // No-op.
 const mode_t S_ISGID = 0x04000000;        // No-op.
 const mode_t S_ISVTX = 0x02000000;        // No-op.
+
+
+// File I/O function aliases.
+//
+// NOTE: The use of `auto` and the trailing return type in the following
+// functions are meant to make it easier for Linux developers to use and
+// maintain the code. It is an explicit marker that we are using the compiler
+// to guarantee that the return type is identical to whatever is in the Windows
+// implementation of the standard.
+inline auto write(int fd, const void* buffer, size_t count) ->
+decltype(_write(fd, buffer, count))
+{
+  return _write(fd, buffer, count);
+}
+
+
+inline auto open(const char* path, int flags) ->
+decltype(_open(path, flags))
+{
+  return _open(path, flags);
+}
+
+
+inline auto close(int fd) ->
+decltype(_close(fd))
+{
+  return _close(fd);
+}
+
+
+inline auto chdir(const char* path) ->
+decltype(_chdir(path))
+{
+  return _chdir(path);
+}
+
+
+inline auto getcwd(char* path, int maxlen) ->
+decltype(_getcwd(path, maxlen))
+{
+  return _getcwd(path, maxlen);
+}
+
+
+inline auto mkdir(const char* path, mode_t mode) ->
+decltype(_mkdir(path))
+{
+  return _mkdir(path);
+}
+
+
+inline auto mktemp(char* path) ->
+decltype(_mktemp(path))
+{
+  return _mktemp(path);
+}
+
+
+inline auto mkstemp(char* path) ->
+decltype(_mktemp_s(path, strlen(path) + 1))
+{
+  // NOTE: in the POSIX spec, `mkstemp` will generate a random filename from
+  // the `path` template, `open` that filename, and return the resulting file
+  // descriptor. On Windows, `_mktemp_s` will actually only generate the path,
+  // so here we actually have to call `open` ourselves to get a file descriptor
+  // we can return as a result.
+  if (_mktemp_s(path, strlen(path) + 1) != 0) {
+    return -1;
+  }
+
+  // NOTE: We open the file with read / write access for the given user, an
+  // attempt to match POSIX's specification of `mkstemp`.
+  return _open(path, S_IRUSR | S_IWUSR);
+}
+
+
+inline auto realpath(const char* path, char* resolved) ->
+decltype(_fullpath(resolved, path, PATH_MAX))
+{
+  return _fullpath(resolved, path, PATH_MAX);
+}
+
+
+inline auto access(const char* fileName, int accessMode) ->
+decltype(_access(fileName, accessMode))
+{
+  return _access(fileName, accessMode);
+}
 
 
 #endif // __STOUT_WINDOWS_HPP__

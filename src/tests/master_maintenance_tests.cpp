@@ -1,20 +1,18 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <initializer_list>
 #include <string>
@@ -95,12 +93,7 @@ JSON::Array createMachineList(std::initializer_list<MachineID> _ids)
   RepeatedPtrField<MachineID> ids =
     internal::protobuf::maintenance::createMachineList(_ids);
 
-  JSON::Array array;
-  foreach (const MachineID& id, ids) {
-    array.values.emplace_back(JSON::Protobuf(id));
-  }
-
-  return array;
+  return JSON::protobuf(ids);
 }
 
 
@@ -204,7 +197,7 @@ TEST_F(MasterMaintenanceTest, UpdateSchedule)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 
@@ -238,7 +231,7 @@ TEST_F(MasterMaintenanceTest, UpdateSchedule)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(BadRequest().status, response);
 
@@ -252,7 +245,7 @@ TEST_F(MasterMaintenanceTest, UpdateSchedule)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 
@@ -266,7 +259,7 @@ TEST_F(MasterMaintenanceTest, UpdateSchedule)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(BadRequest().status, response);
 
@@ -279,7 +272,7 @@ TEST_F(MasterMaintenanceTest, UpdateSchedule)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(BadRequest().status, response);
 
@@ -291,7 +284,7 @@ TEST_F(MasterMaintenanceTest, UpdateSchedule)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(BadRequest().status, response);
 
@@ -303,7 +296,7 @@ TEST_F(MasterMaintenanceTest, UpdateSchedule)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 
@@ -313,7 +306,7 @@ TEST_F(MasterMaintenanceTest, UpdateSchedule)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 }
@@ -334,7 +327,7 @@ TEST_F(MasterMaintenanceTest, FailToUnscheduleDeactivatedMachines)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 
@@ -355,7 +348,7 @@ TEST_F(MasterMaintenanceTest, FailToUnscheduleDeactivatedMachines)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(BadRequest().status, response);
 
@@ -450,7 +443,7 @@ TEST_F(MasterMaintenanceTest, PendingUnavailabilityTest)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 
@@ -560,7 +553,7 @@ TEST_F(MasterMaintenanceTest, PreV1SchedulerSupport)
         master.get(),
         "maintenance/schedule",
         headers,
-        stringify(JSON::Protobuf(schedule)));
+        stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 
@@ -653,7 +646,7 @@ TEST_F(MasterMaintenanceTest, EnterMaintenanceMode)
         master.get(),
         "maintenance/schedule",
         headers,
-        stringify(JSON::Protobuf(schedule)));
+        stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 
@@ -781,7 +774,7 @@ TEST_F(MasterMaintenanceTest, BringDownMachines)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 
@@ -852,7 +845,7 @@ TEST_F(MasterMaintenanceTest, BringUpMachines)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 
@@ -957,7 +950,7 @@ TEST_F(MasterMaintenanceTest, MachineStatus)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 
@@ -1059,7 +1052,7 @@ TEST_F(MasterMaintenanceTest, InverseOffers)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 
@@ -1373,7 +1366,7 @@ TEST_F(MasterMaintenanceTest, InverseOffersFilters)
       master.get(),
       "maintenance/schedule",
       headers,
-      stringify(JSON::Protobuf(schedule)));
+      stringify(JSON::protobuf(schedule)));
 
   AWAIT_EXPECT_RESPONSE_STATUS_EQ(OK().status, response);
 
