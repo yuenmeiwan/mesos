@@ -119,7 +119,7 @@ Future<Nothing> OverlayBackendProcess::provision(
 
   Try<Nothing> mkdir = os::mkdir(rootfs);
   if (mkdir.isError()) {
-    return Failure("Failed to create container rootfs at " + 'rootfs');
+    return Failure("Failed to create container rootfs at " + rootfs);
   }
 
   // The specified lower directories will be stacked beginning from the
